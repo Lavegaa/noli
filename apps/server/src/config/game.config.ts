@@ -7,6 +7,8 @@ export const GAME = {
     ttlDays: 7,
   },
   playValidation: { maxTapsPerSecond: 25, timed10MaxDurationMs: 10500 },
+  /** 친구 기록 소식 푸시에 쓰는 제목. 친구 이름이 생기기 전까지 v1은 "친구"로 쓴다. */
+  news: { friendLabel: '친구' },
   gacha: {
     shardsPerPull: 5,
     rates: { common: 70, rare: 22, epic: 7, legend: 1 },

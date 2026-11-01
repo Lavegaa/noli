@@ -29,6 +29,9 @@ model Account {
   shareCodes       ShareCode[]
   friendshipsA     Friendship[]    @relation("FriendA")
   friendshipsB     Friendship[]    @relation("FriendB")
+  playRecords      PlayRecord[]
+  clickerStats     ClickerStat[]
+  news             NewsItem[]
 }
 
 enum InventorySource {
@@ -53,6 +56,8 @@ model Clicker {
   creator          Account         @relation(fields: [creatorId], references: [id])
   inventoryItems   InventoryItem[]
   shareCodes       ShareCode[]
+  playRecords      PlayRecord[]
+  stats            ClickerStat[]
 
   @@index([creatorId])
 }
@@ -96,4 +101,55 @@ model Friendship {
 
   @@id([accountA, accountB])
   @@index([accountB])
+}
+
+enum PlayMode {
+  free
+  timed10
+}
+
+model PlayRecord {
+  id         String   @id @default(uuid())
+  accountId  String
+  clickerId  String
+  mode       PlayMode
+  score      Int
+  maxCombo   Int
+  taps       Int
+  durationMs Int
+  playedAt   DateTime
+  account    Account  @relation(fields: [accountId], references: [id])
+  clicker    Clicker  @relation(fields: [clickerId], references: [id])
+
+  @@index([accountId, playedAt])
+  @@index([clickerId, playedAt])
+}
+
+model ClickerStat {
+  accountId String
+  clickerId String
+  bestScore Int
+  bestCombo Int
+  totalTaps Int
+  account   Account @relation(fields: [accountId], references: [id])
+  clicker   Clicker @relation(fields: [clickerId], references: [id])
+
+  @@id([accountId, clickerId])
+}
+
+enum NewsType {
+  friend_record
+  received
+}
+
+model NewsItem {
+  id          String    @id @default(uuid())
+  recipientId String
+  type        NewsType
+  payload     Json
+  createdAt   DateTime  @default(now())
+  readAt      DateTime?
+  recipient   Account   @relation(fields: [recipientId], references: [id])
+
+  @@index([recipientId, createdAt])
 }
