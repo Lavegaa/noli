@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { linkedAdult } from './helpers/accounts.js';
 import { createTestApp, resetDb, type Fakes } from './helpers/test-app.js';
 
 const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -28,7 +29,9 @@ describe('clickers & inventory (e2e)', () => {
   });
 
   const http = () => request(app.getHttpServer());
-  const newToken = () => `uid:maker${seq++}:anonymous`;
+  /** 업로드는 share 권한이 필요하다(Ruling M). */
+  const maker = () => linkedAdult(app, `maker${seq++}`);
+  const guest = () => `uid:guest${seq++}:anonymous`;
 
   const upload = (
     token: string,
@@ -61,7 +64,7 @@ describe('clickers & inventory (e2e)', () => {
     (await http().get('/me').set(bearer(token))).body.usedSlots;
 
   it('upload -> 201, GET shows idleUrl stored in object storage', async () => {
-    const token = newToken();
+    const token = await maker();
     expect(await usedSlots(token)).toBe(0);
 
     const res = await upload(token, { pressed: PNG }).expect(201);
@@ -100,8 +103,42 @@ describe('clickers & inventory (e2e)', () => {
     });
   });
 
+  it.each([
+    ['guest', () => guest()],
+    ['linked without birthdate', () => `uid:nobirth${seq++}:google.com`],
+  ])(
+    '%s upload -> 403 CAPABILITY_REQUIRED, nothing stored',
+    async (_l, tok) => {
+      const token = tok();
+      const objectsBefore = fakes.storage.objects.size;
+      const res = await upload(token).expect(403);
+      expect(res.body.error.code).toBe('CAPABILITY_REQUIRED');
+      expect(fakes.storage.objects.size).toBe(objectsBefore);
+      expect(await usedSlots(token)).toBe(0);
+    },
+  );
+
+  it('pending minor PUT on an existing clicker -> 403 CAPABILITY_REQUIRED', async () => {
+    const token = await maker();
+    const { body } = await upload(token).expect(201);
+    const { PrismaService } = await import('../src/prisma/prisma.service.js');
+    const me = (await http().get('/me').set(bearer(token))).body;
+    await app.get(PrismaService).account.update({
+      where: { id: me.id },
+      data: { birthDate: new Date('2016-05-01'), consentStatus: 'pending' },
+    });
+    const res = await http()
+      .put(`/clickers/${body.clickerId}`)
+      .set(bearer(token))
+      .attach('idle', PNG, { filename: 'idle.png', contentType: 'image/png' })
+      .field('spec', spec())
+      .expect(403);
+    expect(res.body.error.code).toBe('CAPABILITY_REQUIRED');
+    expect(res.body.error.message).toContain('CONSENT_REQUIRED');
+  });
+
   it('pressed is optional -> pressedUrl omitted', async () => {
-    const token = newToken();
+    const token = await maker();
     const res = await upload(token).expect(201);
     const got = await http()
       .get(`/clickers/${res.body.clickerId}`)
@@ -111,7 +148,7 @@ describe('clickers & inventory (e2e)', () => {
   });
 
   it('name of 21 chars -> 400 VALIDATION_FAILED, nothing stored', async () => {
-    const token = newToken();
+    const token = await maker();
     const res = await upload(token, { spec: spec('가'.repeat(21)) }).expect(
       400,
     );
@@ -126,32 +163,32 @@ describe('clickers & inventory (e2e)', () => {
     ['no name', JSON.stringify({ foo: 1 })],
     ['array', '[]'],
   ])('bad spec (%s) -> 400 VALIDATION_FAILED', async (_label, bad) => {
-    const res = await upload(newToken(), { spec: bad }).expect(400);
+    const res = await upload(await maker(), { spec: bad }).expect(400);
     expect(res.body.error.code).toBe('VALIDATION_FAILED');
   });
 
   it('missing idle -> 400 VALIDATION_FAILED', async () => {
-    const res = await upload(newToken(), { idle: null }).expect(400);
+    const res = await upload(await maker(), { idle: null }).expect(400);
     expect(res.body.error.code).toBe('VALIDATION_FAILED');
   });
 
   it('non-png idle (declared image/png) -> 400 INVALID_IMAGE', async () => {
-    const res = await upload(newToken(), { idle: JPEG }).expect(400);
+    const res = await upload(await maker(), { idle: JPEG }).expect(400);
     expect(res.body.error.code).toBe('INVALID_IMAGE');
   });
 
   it('non-png pressed -> 400 INVALID_IMAGE', async () => {
-    const res = await upload(newToken(), { pressed: JPEG }).expect(400);
+    const res = await upload(await maker(), { pressed: JPEG }).expect(400);
     expect(res.body.error.code).toBe('INVALID_IMAGE');
   });
 
   it('idle over 2MB -> 413', async () => {
     const big = Buffer.concat([PNG, Buffer.alloc(2 * 1024 * 1024)]);
-    await upload(newToken(), { idle: big }).expect(413);
+    await upload(await maker(), { idle: big }).expect(413);
   });
 
   it('full inventory -> 409 SLOT_FULL, no Clicker row, frees after delete', async () => {
-    const token = newToken();
+    const token = await maker();
     const ids: string[] = [];
     for (let i = 0; i < 6; i++) {
       const res = await upload(token).expect(201);
@@ -173,7 +210,7 @@ describe('clickers & inventory (e2e)', () => {
   });
 
   it('SLOT_FULL leaves no extra Clicker row in the DB', async () => {
-    const token = newToken();
+    const token = await maker();
     const me = (await http().get('/me').set(bearer(token))).body;
     for (let i = 0; i < 6; i++) await upload(token).expect(201);
     await upload(token).expect(409);
@@ -183,7 +220,7 @@ describe('clickers & inventory (e2e)', () => {
   });
 
   it('PUT by creator -> version 2, key v2, GET reflects it', async () => {
-    const token = newToken();
+    const token = await maker();
     const { body } = await upload(token).expect(201);
     const res = await http()
       .put(`/clickers/${body.clickerId}`)
@@ -212,7 +249,7 @@ describe('clickers & inventory (e2e)', () => {
   });
 
   it('concurrent PUTs are serialized: distinct versions, no key overwritten', async () => {
-    const token = newToken();
+    const token = await maker();
     const { body } = await upload(token).expect(201);
     const pngWith = (tag: string) =>
       Buffer.concat([PNG.subarray(0, 8), Buffer.from(tag)]);
@@ -252,8 +289,8 @@ describe('clickers & inventory (e2e)', () => {
   });
 
   it('PUT/DELETE by someone else -> 403 NOT_OWNER', async () => {
-    const owner = newToken();
-    const other = newToken();
+    const owner = await maker();
+    const other = await maker();
     const { body } = await upload(owner).expect(201);
 
     const put = await http()
@@ -277,18 +314,16 @@ describe('clickers & inventory (e2e)', () => {
   });
 
   it('unknown clicker -> 404', async () => {
+    const token = guest();
     await http()
       .get('/clickers/00000000-0000-0000-0000-000000000000')
-      .set(bearer(newToken()))
+      .set(bearer(token))
       .expect(404);
-    await http()
-      .get('/clickers/not-a-uuid')
-      .set(bearer(newToken()))
-      .expect(404);
+    await http().get('/clickers/not-a-uuid').set(bearer(token)).expect(404);
   });
 
   it('hidden clicker -> GET 404 CLICKER_UNAVAILABLE and absent from inventory', async () => {
-    const token = newToken();
+    const token = await maker();
     const { body } = await upload(token).expect(201);
     const { PrismaService } = await import('../src/prisma/prisma.service.js');
     await app.get(PrismaService).clicker.update({
@@ -307,8 +342,8 @@ describe('clickers & inventory (e2e)', () => {
   });
 
   it('creator delete keeps the receiver inventory item', async () => {
-    const creator = newToken();
-    const receiver = newToken();
+    const creator = await maker();
+    const receiver = await maker();
     const { body } = await upload(creator).expect(201);
     const { PrismaService } = await import('../src/prisma/prisma.service.js');
     const prisma = app.get(PrismaService);
@@ -356,7 +391,7 @@ describe('clickers & inventory (e2e)', () => {
   });
 
   it('inventory item override beats spec.defaultEquip, null when neither', async () => {
-    const token = newToken();
+    const token = await maker();
     const { body } = await upload(token).expect(201);
     const noEquip = await upload(token, {
       spec: JSON.stringify({ name: '맨몸' }),
@@ -382,8 +417,8 @@ describe('clickers & inventory (e2e)', () => {
 
   describe('DELETE /inventory/:itemId', () => {
     it('removes own item, frees the slot; others get 404', async () => {
-      const token = newToken();
-      const other = newToken();
+      const token = await maker();
+      const other = await maker();
       const { body } = await upload(token).expect(201);
       await http()
         .delete(`/inventory/${body.inventoryItemId}`)
@@ -399,7 +434,7 @@ describe('clickers & inventory (e2e)', () => {
   });
 
   it('GET /me usedSlots goes 0 -> 1 after upload and back after delete', async () => {
-    const token = newToken();
+    const token = await maker();
     expect(await usedSlots(token)).toBe(0);
     const { body } = await upload(token).expect(201);
     expect(await usedSlots(token)).toBe(1);

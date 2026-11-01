@@ -41,7 +41,7 @@ export class QuestsService {
     });
     if (existing.length > 0) return existing;
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${accountId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${accountId} FOR NO KEY UPDATE`;
       const again = await tx.dailyQuest.findMany({ where: { accountId, day } });
       if (again.length > 0) return again;
       const chosen = this.draw(GAME.quests.dailyCount);

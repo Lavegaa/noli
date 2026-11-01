@@ -39,7 +39,7 @@ export class FakeAuth implements AuthVerifier {
   async verify(idToken: string): Promise<{ uid: string; providers: string[] }> {
     const [prefix, uid, providers] = idToken.split(':');
     if (prefix !== 'uid' || !uid || !providers) {
-      throw new AppError(401, 'UNAUTHORIZED', 'Invalid or expired ID token');
+      throw new AppError(401, 'UNAUTHENTICATED', 'Invalid or expired ID token');
     }
     return { uid, providers: providers.split(',') };
   }

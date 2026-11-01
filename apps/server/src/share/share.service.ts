@@ -82,12 +82,13 @@ export class ShareService {
 
     const now = this.clock.now();
     const expiresAt = new Date(now.getTime() + GAME.shareCode.ttlDays * DAY_MS);
-    const code = await this.insertCode(
-      clicker.id,
-      clicker.creatorId,
+    const code = await this.insertCode({
+      clickerId: clicker.id,
+      creatorId: clicker.creatorId,
+      issuerId: account.id,
       allowFriend,
       expiresAt,
-    );
+    });
     const host = process.env.SHARE_HOST ?? 'noli.example.com';
     return {
       code,
@@ -99,7 +100,7 @@ export class ShareService {
 
   async preview(account: Account, code: string) {
     const share = await this.findCode(code);
-    await this.assertNotBlocked(account.id, share.creatorId);
+    await this.assertNotBlocked(account.id, share);
     const clicker = await this.clickers.getVisible(share.clickerId);
     return {
       clicker: toClickerView(clicker, this.storage),
@@ -116,9 +117,10 @@ export class ShareService {
   ): Promise<RedeemResult> {
     const share = await this.findCode(code);
     if (share.expiresAt <= this.clock.now()) throw invalidCode();
-    await this.assertNotBlocked(account.id, share.creatorId);
+    await this.assertNotBlocked(account.id, share);
     const clicker = await this.clickers.getVisible(share.clickerId);
-    if (clicker.creatorId === account.id) {
+    // 내가 만든 클릭커이거나, 내가 발급한 코드면 받을 수 없다.
+    if (clicker.creatorId === account.id || share.issuerId === account.id) {
       throw new AppError(409, 'OWN_CLICKER', 'This is your own clicker');
     }
 
@@ -127,7 +129,7 @@ export class ShareService {
       outcome = await this.prisma.$transaction(async (tx) => {
         // 계정 행을 먼저 잠근다. 같은 계정의 중복 수령이 줄을 서므로
         // 뒤따르는 요청은 앞 요청이 넣은 항목을 보고 멱등 결과를 받는다.
-        await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${account.id} FOR UPDATE`;
+        await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${account.id} FOR NO KEY UPDATE`;
         const existing = await tx.inventoryItem.findUnique({
           where: {
             accountId_clickerId: {
@@ -183,6 +185,7 @@ export class ShareService {
     };
   }
 
+  /** 친구는 코드를 실제로 주고받은 두 사람(발급자 ↔ 수령자) 사이에만 생긴다. */
   private async maybeAddFriend(
     account: Account,
     share: ShareCode,
@@ -194,13 +197,13 @@ export class ShareService {
     if (!mine.allowed) {
       return { friendAdded: false, friendBlockedReason: mine.reason };
     }
-    const creator = await this.prisma.account.findUnique({
-      where: { id: share.creatorId },
+    const issuer = await this.prisma.account.findUnique({
+      where: { id: share.issuerId },
     });
-    if (!creator || !capabilitiesOf(creator, now).addFriend.allowed) {
+    if (!issuer || !capabilitiesOf(issuer, now).addFriend.allowed) {
       return { friendAdded: false };
     }
-    await this.friends.link(account.id, creator.id);
+    await this.friends.link(account.id, issuer.id);
     return { friendAdded: true };
   }
 
@@ -212,23 +215,23 @@ export class ShareService {
     return share;
   }
 
-  /** 차단 관계면 코드의 존재 자체를 숨긴다. */
-  private async assertNotBlocked(accountId: string, creatorId: string) {
-    if (await this.blocks.isBlocked(accountId, creatorId)) throw invalidCode();
+  /** 발급자나 제작자와 차단 관계면 코드의 존재 자체를 숨긴다. */
+  private async assertNotBlocked(
+    accountId: string,
+    share: Pick<ShareCode, 'creatorId' | 'issuerId'>,
+  ) {
+    for (const otherId of new Set([share.issuerId, share.creatorId])) {
+      if (await this.blocks.isBlocked(accountId, otherId)) throw invalidCode();
+    }
   }
 
   private async insertCode(
-    clickerId: string,
-    creatorId: string,
-    allowFriend: boolean,
-    expiresAt: Date,
+    data: Omit<ShareCode, 'code' | 'createdAt'>,
   ): Promise<string> {
     for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
       const code = this.drawCode();
       try {
-        await this.prisma.shareCode.create({
-          data: { code, clickerId, creatorId, allowFriend, expiresAt },
-        });
+        await this.prisma.shareCode.create({ data: { code, ...data } });
         return code;
       } catch (e) {
         if (!isUniqueViolation(e)) throw e;

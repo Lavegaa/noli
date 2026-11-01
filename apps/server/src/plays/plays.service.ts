@@ -59,7 +59,7 @@ export class PlaysService {
     const { previousBest, record } = await this.prisma.$transaction(
       async (tx) => {
         // 계정 행을 잠가 같은 계정의 동시 기록이 통계를 덮어쓰지 못하게 한다.
-        await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${account.id} FOR UPDATE`;
+        await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${account.id} FOR NO KEY UPDATE`;
         const record = await tx.playRecord.create({
           data: {
             accountId: account.id,
@@ -141,11 +141,16 @@ export class PlaysService {
     clicker: { id: string; creatorId: string; name: string },
     maxCombo: number,
   ): Promise<void> {
-    await this.news.add(clicker.creatorId, 'friend_record', {
-      clickerId: clicker.id,
-      friendId,
-      maxCombo,
-    });
+    // 기록은 이미 커밋됐다. 소식이나 푸시 실패로 500을 돌려주면 재시도가 기록을 중복시킨다.
+    try {
+      await this.news.add(clicker.creatorId, 'friend_record', {
+        clickerId: clicker.id,
+        friendId,
+        maxCombo,
+      });
+    } catch (e) {
+      this.logger.warn(`friend_record news failed: ${String(e)}`);
+    }
     try {
       await this.notifier.notify(
         clicker.creatorId,

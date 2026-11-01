@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { toClickerView } from '../clickers/clicker-view.js';
+import { retireClicker } from '../clickers/retire-clicker.js';
 import { AppError } from '../common/app-error.js';
 import { OBJECT_STORAGE, type ObjectStorage } from '../common/ports.js';
 import type {
@@ -35,7 +36,7 @@ export class InventoryService {
     const db = tx ?? this.prisma;
     const rows = tx
       ? await tx.$queryRaw<{ storageSlots: number }[]>`
-          SELECT "storageSlots" FROM "Account" WHERE "id" = ${accountId} FOR UPDATE`
+          SELECT "storageSlots" FROM "Account" WHERE "id" = ${accountId} FOR NO KEY UPDATE`
       : await this.prisma.$queryRaw<{ storageSlots: number }[]>`
           SELECT "storageSlots" FROM "Account" WHERE "id" = ${accountId}`;
     const slots = rows[0]?.storageSlots ?? 0;
@@ -138,13 +139,27 @@ export class InventoryService {
     return { id: updated.id, equip: equipOf(updated, item.clicker.specJson) };
   }
 
+  /**
+   * 내가 만든(created) 항목을 지우면 클릭커 삭제와 같다: 공유 코드가 무효가 되고
+   * 더는 수정·공유할 수 없다(Ruling N). 받은 항목은 내 보관함에서만 빠진다.
+   */
   async remove(accountId: string, itemId: string): Promise<void> {
-    const { count } = await this.prisma.inventoryItem.deleteMany({
+    const item = await this.prisma.inventoryItem.findFirst({
       where: { id: itemId, accountId },
+      include: { clicker: { select: { creatorId: true } } },
     });
-    if (count === 0) {
+    if (!item) {
       throw new AppError(404, 'ITEM_NOT_FOUND', 'Inventory item not found');
     }
+    if (item.source === 'created' && item.clicker.creatorId === accountId) {
+      await this.prisma.$transaction((tx) =>
+        retireClicker(tx, accountId, item.clickerId),
+      );
+      return;
+    }
+    await this.prisma.inventoryItem.deleteMany({
+      where: { id: itemId, accountId },
+    });
   }
 }
 

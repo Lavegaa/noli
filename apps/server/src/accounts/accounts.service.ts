@@ -58,18 +58,32 @@ export class AccountsService {
     };
   }
 
+  /**
+   * 생일은 한 번만 정한다. 같은 값을 다시 보내면 그대로 돌려주고, 다른 값이면
+   * 409 BIRTHDATE_ALREADY_SET. "보호자 동의 필요"를 본 뒤 나이를 고쳐 게이트를
+   * 넘지 못하게 하려는 것이다. 정정은 지원/관리자 경로로 한다.
+   */
   async setBirthDate(account: Account, birthDate: string): Promise<Account> {
     const date = parseBirthDate(birthDate, this.clock.now());
     const consentStatus = isUnder14(date, this.clock.now())
-      ? // 이미 보호자 동의를 받았다면 생일 재입력으로 되돌리지 않는다.
-        account.consentStatus === 'granted'
-        ? 'granted'
-        : 'pending'
+      ? 'pending'
       : 'not_required';
-    return this.prisma.account.update({
-      where: { id: account.id },
+    // 조건부 갱신이라 동시에 다른 값이 들어와도 하나만 반영된다.
+    const { count } = await this.prisma.account.updateMany({
+      where: { id: account.id, birthDate: null },
       data: { birthDate: date, consentStatus },
     });
+    const current = await this.prisma.account.findUniqueOrThrow({
+      where: { id: account.id },
+    });
+    if (count === 0 && current.birthDate?.getTime() !== date.getTime()) {
+      throw new AppError(
+        409,
+        'BIRTHDATE_ALREADY_SET',
+        'Birth date is already set',
+      );
+    }
+    return current;
   }
 }
 

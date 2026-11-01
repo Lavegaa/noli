@@ -103,7 +103,7 @@ export class ReportsService {
   }
 
   private async lockCreator(tx: Prisma.TransactionClient, creatorId: string) {
-    await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${creatorId} FOR UPDATE`;
+    await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${creatorId} FOR NO KEY UPDATE`;
   }
 
   /** 반복 침해자: 제작자의 서로 다른 클릭커 중 pending/removed 신고가 있는 수가 기준 이상이면 제한. */

@@ -90,7 +90,7 @@ export class GachaService {
     if (prior) return prior;
     try {
       return await this.prisma.$transaction(async (tx) => {
-        await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${accountId} FOR UPDATE`;
+        await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${accountId} FOR NO KEY UPDATE`;
         const again = await tx.gachaPull.findUnique({
           where: { requestId },
           include: { switch: true },

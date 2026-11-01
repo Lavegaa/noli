@@ -6,7 +6,14 @@ export const GAME = {
     alphabet: 'ABCDEFGHJKMNPQRSTUVWXYZ23456789',
     ttlDays: 7,
   },
-  playValidation: { maxTapsPerSecond: 25, timed10MaxDurationMs: 10500 },
+  playValidation: {
+    maxTapsPerSecond: 25,
+    timed10MaxDurationMs: 10500,
+    /** 자유 모드 한 판의 최대 길이(30분). 위조 기록으로 누적 탭 랭킹이 부풀지 않게 한다. */
+    freeMaxDurationMs: 30 * 60 * 1000,
+    /** score/taps/maxCombo 상한. int4 넘침(500)도 막는다. */
+    maxCounter: 1_000_000,
+  },
   /** 친구 기록 소식 푸시에 쓰는 제목. 친구 이름이 생기기 전까지 v1은 "친구"로 쓴다. */
   news: { friendLabel: '친구' },
   gacha: {

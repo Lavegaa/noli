@@ -16,7 +16,7 @@ export class FirebaseAuthVerifier implements AuthVerifier {
           : [decoded.firebase.sign_in_provider];
       return { uid: decoded.uid, providers };
     } catch {
-      throw new AppError(401, 'UNAUTHORIZED', 'Invalid or expired ID token');
+      throw new AppError(401, 'UNAUTHENTICATED', 'Invalid or expired ID token');
     }
   }
 }

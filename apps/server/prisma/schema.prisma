@@ -27,6 +27,7 @@ model Account {
   clickers         Clicker[]
   inventoryItems   InventoryItem[]
   shareCodes       ShareCode[]
+  issuedCodes      ShareCode[]     @relation("ShareIssuer")
   friendshipsA     Friendship[]    @relation("FriendA")
   friendshipsB     Friendship[]    @relation("FriendB")
   playRecords      PlayRecord[]
@@ -88,15 +89,18 @@ model InventoryItem {
   @@unique([accountId, clickerId])
 }
 
+/// creatorId는 클릭커 제작자, issuerId는 이 코드를 만든 계정(제작자 또는 다시 공유한 보유자).
 model ShareCode {
   code        String   @id
   clickerId   String
   creatorId   String
+  issuerId    String
   allowFriend Boolean
   expiresAt   DateTime
   createdAt   DateTime @default(now())
   clicker     Clicker  @relation(fields: [clickerId], references: [id])
   creator     Account  @relation(fields: [creatorId], references: [id])
+  issuer      Account  @relation("ShareIssuer", fields: [issuerId], references: [id])
 
   @@index([clickerId])
 }

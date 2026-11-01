@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { IsOptional, IsString } from 'class-validator';
+import { RequireCapability } from '../auth/capability.guard.js';
 import { CurrentAccount } from '../auth/current-account.decorator.js';
 import { GAME } from '../config/game.config.js';
 import type { Account } from '../generated/prisma/client.js';
@@ -40,7 +41,9 @@ const imageFields = () =>
 export class ClickersController {
   constructor(private readonly clickers: ClickersService) {}
 
+  /** 서버 업로드는 공유를 위해서만 존재하므로 공유 권한이 있어야 한다(동의 전 최소 수집). */
   @Post()
+  @RequireCapability('share')
   @UseInterceptors(imageFields())
   create(
     @CurrentAccount() account: Account,
@@ -54,6 +57,7 @@ export class ClickersController {
   }
 
   @Put(':id')
+  @RequireCapability('share')
   @UseInterceptors(imageFields())
   update(
     @CurrentAccount() account: Account,

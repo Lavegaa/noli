@@ -34,8 +34,12 @@ describe('accounts & capability gate (e2e)', () => {
     expect(res.body.error.code).toBe('UNAUTHENTICATED');
   });
 
-  it('malformed token -> 401', async () => {
-    await http().get('/me').set(bearer('garbage')).expect(401);
+  it.each([
+    ['malformed bearer token', { Authorization: 'Bearer garbage' }],
+    ['non-bearer header', { Authorization: 'Basic abc' }],
+  ])('%s -> 401 UNAUTHENTICATED', async (_label, headers) => {
+    const res = await http().get('/me').set(headers).expect(401);
+    expect(res.body.error.code).toBe('UNAUTHENTICATED');
   });
 
   it('/health stays public', async () => {
@@ -111,6 +115,51 @@ describe('accounts & capability gate (e2e)', () => {
         .set(bearer(t))
         .expect(403);
       expect(res.body.error.message).toContain('CONSENT_REQUIRED');
+    });
+
+    it('set once: same value again is idempotent, a different value -> 409 BIRTHDATE_ALREADY_SET', async () => {
+      const t = 'uid:kid6:google.com';
+      const put = (birthDate: string) =>
+        http().put('/me/birthdate').set(bearer(t)).send({ birthDate });
+      await put('1995-03-03').expect(200);
+      const again = await put('1995-03-03').expect(200);
+      expect(again.body.capabilities.share).toEqual({ allowed: true });
+      const changed = await put('1996-03-03').expect(409);
+      expect(changed.body.error.code).toBe('BIRTHDATE_ALREADY_SET');
+    });
+
+    it('pending minor PUTs an adult date -> 409, capabilities stay CONSENT_REQUIRED', async () => {
+      const t = 'uid:kid7:google.com';
+      await http()
+        .put('/me/birthdate')
+        .set(bearer(t))
+        .send({ birthDate: '2016-05-01' })
+        .expect(200);
+      const res = await http()
+        .put('/me/birthdate')
+        .set(bearer(t))
+        .send({ birthDate: '1990-01-01' })
+        .expect(409);
+      expect(res.body.error.code).toBe('BIRTHDATE_ALREADY_SET');
+      const me = await http().get('/me').set(bearer(t)).expect(200);
+      expect(me.body.capabilities.share).toEqual({
+        allowed: false,
+        reason: 'CONSENT_REQUIRED',
+      });
+      await http().get('/test-capability/share').set(bearer(t)).expect(403);
+    });
+
+    it.each([
+      ['missing birthDate', {}],
+      ['numeric birthDate', { birthDate: 20000101 }],
+      ['null birthDate', { birthDate: null }],
+    ])('%s -> 400 VALIDATION_FAILED', async (_label, body) => {
+      const res = await http()
+        .put('/me/birthdate')
+        .set(bearer('uid:kid8:google.com'))
+        .send(body)
+        .expect(400);
+      expect(res.body.error.code).toBe('VALIDATION_FAILED');
     });
 
     it.each(['2016-5-1', 'not-a-date', '2016-02-30', '2999-01-01', ''])(

@@ -1,5 +1,8 @@
-import type { INestApplication } from '@nestjs/common';
+import { Logger, type INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { vi } from 'vitest';
+import { GAME } from '../src/config/game.config.js';
+import { NewsService } from '../src/news/news.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { createTestApp, resetDb, type Fakes } from './helpers/test-app.js';
 
@@ -134,6 +137,38 @@ describe('plays, rankings, news (e2e)', () => {
     expect(ok.status).toBe(201);
   });
 
+  it.each([
+    ['score', { score: GAME.playValidation.maxCounter + 1 }],
+    ['taps', { taps: GAME.playValidation.maxCounter + 1 }],
+    ['maxCombo', { maxCombo: GAME.playValidation.maxCounter + 1 }],
+    ['taps above int4', { taps: 2 ** 31 }],
+    ['durationMs over 30 min', { durationMs: 30 * 60 * 1000 + 1 }],
+    ['durationMs above int4', { durationMs: 2 ** 31 }],
+  ])(
+    '%s over the cap -> 400 VALIDATION_FAILED, nothing stored',
+    async (_l, over) => {
+      const maker = await adult();
+      const clickerId = await upload(maker);
+      const res = await play(maker, clickerId, over);
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('VALIDATION_FAILED');
+      expect(await prisma.playRecord.count({ where: { clickerId } })).toBe(0);
+    },
+  );
+
+  it('values exactly at the caps are accepted (free 30 min round)', async () => {
+    const maker = await adult();
+    const clickerId = await upload(maker);
+    const res = await play(maker, clickerId, {
+      score: GAME.playValidation.maxCounter,
+      durationMs: GAME.playValidation.freeMaxDurationMs,
+      taps: 25 * 30 * 60,
+      maxCombo: 25 * 30 * 60,
+    });
+    expect(res.status).toBe(201);
+    expect(GAME.playValidation.freeMaxDurationMs).toBe(30 * 60 * 1000);
+  });
+
   it('clicker not in inventory -> 403 NOT_IN_INVENTORY', async () => {
     const maker = await adult();
     const clickerId = await upload(maker);
@@ -218,6 +253,30 @@ describe('plays, rankings, news (e2e)', () => {
     expect(fakes.notifier.sent).toHaveLength(1);
   });
 
+  it('friend_record news failure after the play committed -> still 201, push still sent, logged', async () => {
+    const { maker, friend, clickerId } = await friendsWithClicker();
+    const news = app.get(NewsService);
+    const add = vi
+      .spyOn(news, 'add')
+      .mockRejectedValueOnce(new Error('news down'));
+    const warn = vi
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      const res = await play(friend, clickerId, { maxCombo: 30, taps: 40 });
+      expect(res.status).toBe(201);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('friend_record news failed'),
+      );
+    } finally {
+      add.mockRestore();
+      warn.mockRestore();
+    }
+    expect(await prisma.playRecord.count({ where: { clickerId } })).toBe(1);
+    expect(fakes.notifier.sent).toHaveLength(1);
+    expect(fakes.notifier.sent[0].accountId).toBe(await accountId(maker));
+  });
+
   it('non-friend record and the creator’s own record make no friend news', async () => {
     const maker = await adult();
     const clickerId = await upload(maker);
@@ -261,7 +320,9 @@ describe('plays, rankings, news (e2e)', () => {
     );
 
     // last week (clock: Wed 2026-01-07 -> previous week Wed)
-    fakes.clock.set(new Date('2026-01-07T03:00:00Z').getTime() - 7 * DAY_MS);
+    fakes.clock.set(
+      new Date(new Date('2026-01-07T03:00:00Z').getTime() - 7 * DAY_MS),
+    );
     await play(friend, clickerId, { maxCombo: 50, taps: 60 }).expect(201);
     fakes.clock.set('2026-01-07T03:00:00Z');
     await play(maker, clickerId, { maxCombo: 10, taps: 20 }).expect(201);

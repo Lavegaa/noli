@@ -7,6 +7,7 @@ import { InventoryService } from '../inventory/inventory.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { toClickerView } from './clicker-view.js';
 import type { ParsedUpload } from './clicker-upload.js';
+import { retireClicker } from './retire-clicker.js';
 
 const keyOf = (id: string, version: number, file: 'idle' | 'pressed') =>
   `clickers/${id}/v${version}/${file}.png`;
@@ -93,18 +94,10 @@ export class ClickersService {
     });
   }
 
-  /** 제작자 보관함에서만 빠진다. 받은 사람의 보관함은 그대로다. */
+  /** 제작자 보관함에서 빠지고 공유 코드가 모두 무효가 된다. 받은 사람의 보관함은 그대로다. */
   async remove(account: Account, id: string): Promise<void> {
     await this.ownedByCreator(account, id);
-    await this.prisma.$transaction([
-      this.prisma.clicker.update({
-        where: { id },
-        data: { deletedByCreator: true },
-      }),
-      this.prisma.inventoryItem.deleteMany({
-        where: { accountId: account.id, clickerId: id },
-      }),
-    ]);
+    await this.prisma.$transaction((tx) => retireClicker(tx, account.id, id));
   }
 
   private async ownedByCreator(
