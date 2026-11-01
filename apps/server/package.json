@@ -23,7 +23,7 @@
     "prebuild": "prisma generate",
     "pretest": "prisma generate",
     "prelint": "prisma generate",
-    "pretest:e2e": "prisma generate && DATABASE_URL=postgresql://noli:noli@localhost:5433/noli_test prisma migrate reset --force"
+    "pretest:e2e": "prisma generate && DATABASE_URL=postgresql://noli:noli@localhost:5433/noli_test prisma migrate deploy"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",
