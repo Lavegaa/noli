@@ -1,4 +1,4 @@
-import type { INestApplication } from '@nestjs/common';
+import { Logger, type INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { GAME } from '../src/config/game.config.js';
 import { vi } from 'vitest';
@@ -288,12 +288,17 @@ describe('share, redeem, friends (e2e)', () => {
         .mockImplementationOnce(async () => {
           throw p2002();
         });
+      const log = vi
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
       try {
         const res = await redeem(receiver, code);
         expect(res.status).toBe(500);
         expect((await inventory(receiver)).items).toHaveLength(0);
+        expect(log).toHaveBeenCalled();
       } finally {
         spy.mockRestore();
+        log.mockRestore();
       }
     });
   });

@@ -38,6 +38,7 @@ model Account {
   reports          Report[]
   blocksGiven      Block[]         @relation("Blocker")
   blocksReceived   Block[]         @relation("Blocked")
+  purchases        Purchase[]
 }
 
 enum InventorySource {
@@ -268,4 +269,21 @@ model Block {
 
   @@id([blockerId, blockedId])
   @@index([blockedId])
+}
+
+enum PurchasePlatform {
+  ios
+  android
+}
+
+/// 스토어 transactionId가 pk라서 같은 결제는 한 번만 반영된다(멱등).
+model Purchase {
+  transactionId String           @id
+  accountId     String
+  platform      PurchasePlatform
+  productId     String
+  createdAt     DateTime         @default(now())
+  account       Account          @relation(fields: [accountId], references: [id])
+
+  @@index([accountId])
 }
