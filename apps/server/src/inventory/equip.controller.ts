@@ -1,16 +1,19 @@
 import { Body, Controller, Param, Put } from '@nestjs/common';
-import { IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsString, ValidateIf } from 'class-validator';
 import { CurrentAccount } from '../auth/current-account.decorator.js';
 import type { Account } from '../generated/prisma/client.js';
 import { InventoryService } from './inventory.service.js';
 
 class EquipDto {
-  @IsOptional()
+  // undefined만 건너뛴다. null·빈 문자열은 400으로 거절한다.
+  @ValidateIf((_, v) => v !== undefined)
   @IsString()
+  @IsNotEmpty()
   sound?: string;
 
-  @IsOptional()
+  @ValidateIf((_, v) => v !== undefined)
   @IsString()
+  @IsNotEmpty()
   effect?: string;
 }
 

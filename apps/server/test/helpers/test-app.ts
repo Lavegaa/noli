@@ -1,8 +1,6 @@
 import { INestApplication, type Type } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import pg from 'pg';
-import { PrismaService } from '../../src/prisma/prisma.service.js';
-import { seedSwitchCatalog } from '../../src/gacha/switch-catalog.js';
 import { AppModule } from '../../src/app.module.js';
 import { configureApp } from '../../src/app.setup.js';
 import {
@@ -70,8 +68,6 @@ export async function createTestApp(
   const app = moduleRef.createNestApplication();
   configureApp(app);
   await app.init();
-  // resetDb는 카탈로그를 지우지 않지만, 새 테스트 DB에서도 멱등 시드로 채워 둔다.
-  await seedSwitchCatalog(app.get(PrismaService));
   return { app, fakes };
 }
 

@@ -88,6 +88,14 @@ export class InventoryService {
     itemId: string,
     dto: { sound?: string; effect?: string },
   ) {
+    // 바꿀 칸이 하나도 없는 요청({})은 400으로 거절한다.
+    if (dto.sound === undefined && dto.effect === undefined) {
+      throw new AppError(
+        400,
+        'VALIDATION_FAILED',
+        'Provide sound and/or effect to equip',
+      );
+    }
     const item = await this.prisma.inventoryItem.findFirst({
       where: { id: itemId, accountId, ...VISIBLE },
       include: { clicker: true },

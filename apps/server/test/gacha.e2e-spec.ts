@@ -102,6 +102,10 @@ describe('switches, gacha, equip (e2e)', () => {
         ['laser', 'aura'],
       );
       expect(res.body.pity.pullCount).toBe(20);
+      expect(res.body.equalWithinGrade).toEqual(expect.any(String));
+      expect(res.body.equalWithinGrade.length).toBeGreaterThan(0);
+      expect(res.body.pity.resetsOnEpicOrLegend).toBe(true);
+      expect(res.body.pity.resetDescription).toEqual(expect.any(String));
       expect(res.body.pity.description).toEqual(expect.any(String));
       expect(res.body.shardsPerPull).toBe(5);
     });
@@ -326,6 +330,32 @@ describe('switches, gacha, equip (e2e)', () => {
         .send({ sound: 'press_basic' })
         .expect(400);
       expect(res.body.error.code).toBe('SWITCH_KIND_MISMATCH');
+    });
+
+    it('400 VALIDATION_FAILED for null or empty slot values', async () => {
+      const token = await user();
+      await upload(token);
+      const itemId = await firstItemId(token);
+      for (const body of [{ sound: null }, { effect: null }, { sound: '' }]) {
+        const res = await http()
+          .put(`/inventory/${itemId}/equip`)
+          .set(bearer(token))
+          .send(body)
+          .expect(400);
+        expect(res.body.error.code).toBe('VALIDATION_FAILED');
+      }
+    });
+
+    it('400 VALIDATION_FAILED for an empty body (nothing to equip)', async () => {
+      const token = await user();
+      await upload(token);
+      const itemId = await firstItemId(token);
+      const res = await http()
+        .put(`/inventory/${itemId}/equip`)
+        .set(bearer(token))
+        .send({})
+        .expect(400);
+      expect(res.body.error.code).toBe('VALIDATION_FAILED');
     });
 
     it("404 for someone else's item", async () => {

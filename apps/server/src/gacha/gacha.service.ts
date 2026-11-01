@@ -55,8 +55,13 @@ export class GachaService {
           })),
         ]),
       ),
+      equalWithinGrade:
+        '같은 등급 안에서는 모든 스위치가 같은 확률로 나옵니다.',
       pity: {
         pullCount: pityPull,
+        resetsOnEpicOrLegend: true,
+        resetDescription:
+          '천장 카운터는 epic 또는 legend가 나오면 0으로 초기화되고, 그 외 등급이 나오면 1 늘어납니다.',
         description: `직전에 epic 이상이 나온 뒤 ${pityPull}번째 뽑기는 epic 이상이 확정됩니다. epic과 legend는 ${rates.epic}:${rates.legend} 비율로 나옵니다.`,
       },
     };
