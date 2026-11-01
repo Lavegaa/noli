@@ -35,6 +35,9 @@ model Account {
   dailyQuests      DailyQuest[]
   ownedSwitches    OwnedSwitch[]
   gachaPulls       GachaPull[]
+  reports          Report[]
+  blocksGiven      Block[]         @relation("Blocker")
+  blocksReceived   Block[]         @relation("Blocked")
 }
 
 enum InventorySource {
@@ -61,6 +64,7 @@ model Clicker {
   shareCodes       ShareCode[]
   playRecords      PlayRecord[]
   stats            ClickerStat[]
+  reports          Report[]
 
   @@index([creatorId])
 }
@@ -222,4 +226,44 @@ model GachaPull {
   switch      Switch   @relation(fields: [switchId], references: [id])
 
   @@index([accountId, createdAt])
+}
+
+enum ReportReason {
+  face
+  copyright
+  inappropriate
+  other
+}
+
+enum ReportStatus {
+  pending
+  restored
+  removed
+}
+
+/// 신고는 접수 즉시 클릭커를 숨긴다. 같은 사람이 같은 클릭커를 두 번 신고할 수 없다(멱등).
+model Report {
+  id         String       @id @default(uuid())
+  reporterId String
+  clickerId  String
+  reason     ReportReason
+  note       String?
+  status     ReportStatus @default(pending)
+  createdAt  DateTime     @default(now())
+  reporter   Account      @relation(fields: [reporterId], references: [id])
+  clicker    Clicker      @relation(fields: [clickerId], references: [id])
+
+  @@unique([reporterId, clickerId])
+  @@index([clickerId, status])
+}
+
+model Block {
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+  blocker   Account  @relation("Blocker", fields: [blockerId], references: [id])
+  blocked   Account  @relation("Blocked", fields: [blockedId], references: [id])
+
+  @@id([blockerId, blockedId])
+  @@index([blockedId])
 }

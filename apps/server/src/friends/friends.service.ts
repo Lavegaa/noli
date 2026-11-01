@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { BlocksService } from '../blocks/blocks.service.js';
 import { AppError } from '../common/app-error.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -9,16 +10,30 @@ const sorted = (x: string, y: string): [string, string] =>
 
 @Injectable()
 export class FriendsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly blocks: BlocksService,
+  ) {}
 
-  /** 이미 친구여도 오류 없이 지나간다. */
+  /**
+   * 이미 친구여도 오류 없이 지나간다. 차단 관계면 403 BLOCKED.
+   * 차단과 같은 쌍 잠금으로 직렬화해 차단 직후 친구가 되살아나지 않게 한다.
+   */
   async link(
     x: string,
     y: string,
     tx?: Prisma.TransactionClient,
   ): Promise<void> {
+    if (!tx) {
+      await this.prisma.$transaction((inner) => this.link(x, y, inner));
+      return;
+    }
     const [accountA, accountB] = sorted(x, y);
-    await (tx ?? this.prisma).friendship.upsert({
+    await this.blocks.lockPair(tx, x, y);
+    if (await this.blocks.existsBetween(tx, x, y)) {
+      throw new AppError(403, 'BLOCKED', 'Cannot befriend a blocked account');
+    }
+    await tx.friendship.upsert({
       where: { accountA_accountB: { accountA, accountB } },
       create: { accountA, accountB },
       update: {},
