@@ -12,6 +12,18 @@ import { PrismaService } from '../prisma/prisma.service.js';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
+/**
+ * 본인 보관함에서 보이는 항목. 제작자가 지운 클릭커는 빠지고, 숨겨진(신고·검사) 클릭커는
+ * 제작자 본인에게만 under_review로 남는다(지울 수 있어야 하므로). 칸도 차지한다.
+ */
+const visibleTo = (accountId: string) =>
+  ({
+    clicker: {
+      deletedByCreator: false,
+      OR: [{ hidden: false }, { creatorId: accountId }],
+    },
+  }) satisfies Prisma.InventoryItemWhereInput;
+
 /** 신고로 숨겨졌거나 제작자가 지운 클릭커는 칸도 차지하지 않고 목록에도 나오지 않는다. */
 const VISIBLE = {
   clicker: { hidden: false, deletedByCreator: false },
@@ -26,7 +38,7 @@ export class InventoryService {
 
   countVisible(accountId: string, tx?: Db): Promise<number> {
     return (tx ?? this.prisma).inventoryItem.count({
-      where: { accountId, ...VISIBLE },
+      where: { accountId, ...visibleTo(accountId) },
     });
   }
 
@@ -66,7 +78,7 @@ export class InventoryService {
 
   async list(account: Account) {
     const items = await this.prisma.inventoryItem.findMany({
-      where: { accountId: account.id, ...VISIBLE },
+      where: { accountId: account.id, ...visibleTo(account.id) },
       include: { clicker: true },
       orderBy: { createdAt: 'asc' },
     });
@@ -76,6 +88,9 @@ export class InventoryService {
         return {
           id: item.id,
           source: item.source,
+          status: item.clicker.hidden
+            ? ('under_review' as const)
+            : ('active' as const),
           clicker: toClickerView(item.clicker, this.storage),
           equip: equipOf(item, item.clicker.specJson),
         };

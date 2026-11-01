@@ -60,6 +60,13 @@ export class ShareService {
       where: { accountId_clickerId: { accountId: account.id, clickerId } },
     });
     const isCreator = clicker.creatorId === account.id;
+    // 보유 여부보다 먼저 본다: 차단으로 보관함에서 빠진 사람도 403이 아니라 404.
+    if (
+      !isCreator &&
+      (await this.blocks.isBlocked(account.id, clicker.creatorId))
+    ) {
+      throw new AppError(404, 'CLICKER_UNAVAILABLE', 'Clicker is unavailable');
+    }
     if (!holds && !isCreator) {
       throw new AppError(403, 'NOT_OWNER', 'Only the owner can share this');
     }
@@ -232,6 +239,10 @@ export class ShareService {
   ) {
     for (const otherId of new Set([share.issuerId, share.creatorId])) {
       if (await this.blocks.isBlocked(accountId, otherId)) throw invalidCode();
+    }
+    // 발급자와 제작자가 서로 차단한 뒤의 재공유 코드(경합 대비).
+    if (await this.blocks.isBlocked(share.issuerId, share.creatorId)) {
+      throw invalidCode();
     }
   }
 

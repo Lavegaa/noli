@@ -94,9 +94,9 @@ export class ClickersService {
     });
   }
 
-  /** 클릭커가 모두에게서 사라진다: 모든 보관함에서 빠지고 공유 코드가 무효가 된다. */
+  /** 제작자는 신고로 숨겨진 상태에서도 지울 수 있다. 클릭커가 모두에게서 사라진다: 모든 보관함에서 빠지고 공유 코드가 무효가 된다. */
   async remove(account: Account, id: string): Promise<void> {
-    await this.ownedByCreator(account, id);
+    await this.ownedByCreator(account, id, this.prisma, true);
     await this.prisma.$transaction((tx) => retireClicker(tx, account.id, id));
   }
 
@@ -104,6 +104,7 @@ export class ClickersService {
     account: Account,
     id: string,
     db: Prisma.TransactionClient | PrismaService = this.prisma,
+    allowHidden = false,
   ): Promise<Clicker> {
     const clicker = await db.clicker.findUnique({ where: { id } });
     if (!clicker || clicker.deletedByCreator) {
@@ -112,7 +113,7 @@ export class ClickersService {
     if (clicker.creatorId !== account.id) {
       throw new AppError(403, 'NOT_OWNER', 'Only the creator can do this');
     }
-    if (clicker.hidden) {
+    if (clicker.hidden && !allowHidden) {
       throw new AppError(404, 'CLICKER_UNAVAILABLE', 'Clicker is unavailable');
     }
     return clicker;

@@ -38,7 +38,7 @@ export class BlocksService {
       .then((row) => row !== null);
   }
 
-  /** 멱등. 차단하면 둘 사이 친구 관계도 함께 끊는다. */
+  /** 멱등. 차단하면 친구 관계를 끊고, 서로 상대가 만든 클릭커의 받은 항목과 공유 코드를 지운다. */
   async block(blockerId: string, blockedId: string): Promise<void> {
     if (blockerId === blockedId) {
       throw new AppError(400, 'VALIDATION_FAILED', 'Cannot block yourself');
@@ -58,6 +58,24 @@ export class BlocksService {
         skipDuplicates: true,
       });
       await tx.friendship.deleteMany({ where: { accountA, accountB } });
+      // 서로의 클릭커를 상대가 계속 갖거나 퍼뜨리지 못하게 한다(양방향).
+      await tx.inventoryItem.deleteMany({
+        where: {
+          source: 'received',
+          OR: [
+            { accountId: blockedId, clicker: { creatorId: blockerId } },
+            { accountId: blockerId, clicker: { creatorId: blockedId } },
+          ],
+        },
+      });
+      await tx.shareCode.deleteMany({
+        where: {
+          OR: [
+            { issuerId: blockedId, creatorId: blockerId },
+            { issuerId: blockerId, creatorId: blockedId },
+          ],
+        },
+      });
     });
   }
 

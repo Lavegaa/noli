@@ -322,7 +322,7 @@ describe('clickers & inventory (e2e)', () => {
     await http().get('/clickers/not-a-uuid').set(bearer(token)).expect(404);
   });
 
-  it('hidden clicker -> GET 404 CLICKER_UNAVAILABLE and absent from inventory', async () => {
+  it('hidden clicker -> GET 404 CLICKER_UNAVAILABLE; creator still sees it as under_review and it uses a slot', async () => {
     const token = await maker();
     const { body } = await upload(token).expect(201);
     const { PrismaService } = await import('../src/prisma/prisma.service.js');
@@ -337,8 +337,9 @@ describe('clickers & inventory (e2e)', () => {
       .expect(404);
     expect(res.body.error.code).toBe('CLICKER_UNAVAILABLE');
     const inv = await http().get('/inventory').set(bearer(token));
-    expect(inv.body.items).toHaveLength(0);
-    expect(await usedSlots(token)).toBe(0);
+    expect(inv.body.items).toHaveLength(1);
+    expect(inv.body.items[0].status).toBe('under_review');
+    expect(await usedSlots(token)).toBe(1);
   });
 
   it('creator delete removes the clicker everywhere, receivers included', async () => {

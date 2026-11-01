@@ -109,9 +109,38 @@ describe('reports and blocks (e2e)', () => {
       expect(view.body.error.code).toBe('CLICKER_UNAVAILABLE');
       expect(await inventoryIds(r2)).not.toContain(clickerId);
       expect(await inventoryIds(r1)).not.toContain(clickerId);
-      expect(await inventoryIds(maker)).not.toContain(clickerId);
+      expect(await inventoryIds(maker)).toContain(clickerId);
       const stored = await reportOf(await idOf(r1), clickerId);
       expect(stored.status).toBe('pending');
+    });
+
+    it('creator sees the reported clicker as under_review, can delete it, and it stays deleted after restore', async () => {
+      const { maker, clickerId, r1, r2 } = await scene();
+      await report(r1, clickerId).expect(200);
+
+      const inv = await http().get('/inventory').set(bearer(maker));
+      const mine = inv.body.items.find(
+        (i: { clicker: { id: string } }) => i.clicker.id === clickerId,
+      );
+      expect(mine.status).toBe('under_review');
+      const me = await http().get('/me').set(bearer(maker));
+      expect(me.body.usedSlots).toBe(1);
+      expect(await inventoryIds(r2)).not.toContain(clickerId);
+
+      await http()
+        .delete(`/clickers/${clickerId}`)
+        .set(bearer(maker))
+        .expect(204);
+
+      const stored = await reportOf(await idOf(r1), clickerId);
+      await reports.resolve(stored.id, 'restored');
+      const view = await http()
+        .get(`/clickers/${clickerId}`)
+        .set(bearer(maker));
+      expect(view.status).toBe(404);
+      for (const t of [maker, r1, r2]) {
+        expect(await inventoryIds(t)).not.toContain(clickerId);
+      }
     });
 
     it('guests can report', async () => {
@@ -312,6 +341,75 @@ describe('reports and blocks (e2e)', () => {
   });
 
   describe('blocks', () => {
+    it('C blocks B who holds C clicker: B loses it, cannot reshare, and B existing reshare code is dead', async () => {
+      const c = await adult();
+      const b = await adult();
+      const d = await adult();
+      const bId = await idOf(b);
+      const clickerId = await upload(c);
+      await redeem(b, await share(c, clickerId)).expect(200);
+      const reshare = await share(b, clickerId);
+
+      await http()
+        .post('/blocks')
+        .set(bearer(c))
+        .send({ accountId: bId })
+        .expect(200);
+
+      expect(await inventoryIds(b)).not.toContain(clickerId);
+      expect(await inventoryIds(c)).toContain(clickerId);
+      const again = await http()
+        .post(`/clickers/${clickerId}/share`)
+        .set(bearer(b))
+        .send({ allowFriend: false });
+      expect(again.status).toBe(404);
+      const res = await redeem(d, reshare);
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('CODE_INVALID');
+    });
+
+    it('B blocks C (reverse direction) also strips B holding and B reshare code', async () => {
+      const c = await adult();
+      const b = await adult();
+      const d = await adult();
+      const cId = await idOf(c);
+      const clickerId = await upload(c);
+      await redeem(b, await share(c, clickerId)).expect(200);
+      const reshare = await share(b, clickerId);
+
+      await http()
+        .post('/blocks')
+        .set(bearer(b))
+        .send({ accountId: cId })
+        .expect(200);
+
+      expect(await inventoryIds(b)).not.toContain(clickerId);
+      const again = await http()
+        .post(`/clickers/${clickerId}/share`)
+        .set(bearer(b))
+        .send({ allowFriend: false });
+      expect(again.status).toBe(404);
+      const res = await redeem(d, reshare);
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('CODE_INVALID');
+      expect(await inventoryIds(c)).toContain(clickerId);
+    });
+
+    it('a reshare code that survives (race) is still rejected when issuer and creator are blocked', async () => {
+      const c = await adult();
+      const b = await adult();
+      const d = await adult();
+      const clickerId = await upload(c);
+      await redeem(b, await share(c, clickerId)).expect(200);
+      const reshare = await share(b, clickerId);
+      await prisma.block.create({
+        data: { blockerId: await idOf(c), blockedId: await idOf(b) },
+      });
+      const res = await redeem(d, reshare);
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('CODE_INVALID');
+    });
+
     it('B blocks A: B cannot redeem A code, and A cannot redeem B code (CODE_INVALID)', async () => {
       const a = await adult();
       const b = await adult();
