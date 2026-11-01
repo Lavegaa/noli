@@ -1,0 +1,53 @@
+import { Injectable } from '@nestjs/common';
+import { AppError } from '../common/app-error.js';
+import type { Prisma } from '../generated/prisma/client.js';
+import { PrismaService } from '../prisma/prisma.service.js';
+
+/** 쌍을 항상 a < b 로 정렬해 저장한다. */
+const sorted = (x: string, y: string): [string, string] =>
+  x < y ? [x, y] : [y, x];
+
+@Injectable()
+export class FriendsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  /** 이미 친구여도 오류 없이 지나간다. */
+  async link(
+    x: string,
+    y: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const [accountA, accountB] = sorted(x, y);
+    await (tx ?? this.prisma).friendship.upsert({
+      where: { accountA_accountB: { accountA, accountB } },
+      create: { accountA, accountB },
+      update: {},
+    });
+  }
+
+  async list(accountId: string): Promise<{ id: string; since: Date }[]> {
+    const rows = await this.prisma.friendship.findMany({
+      where: { OR: [{ accountA: accountId }, { accountB: accountId }] },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((r) => ({
+      id: r.accountA === accountId ? r.accountB : r.accountA,
+      since: r.createdAt,
+    }));
+  }
+
+  /** Task 5(뉴스 피드)가 쓴다. */
+  async friendIdsOf(accountId: string): Promise<string[]> {
+    return (await this.list(accountId)).map((f) => f.id);
+  }
+
+  async remove(accountId: string, friendId: string): Promise<void> {
+    const [accountA, accountB] = sorted(accountId, friendId);
+    const { count } = await this.prisma.friendship.deleteMany({
+      where: { accountA, accountB },
+    });
+    if (count === 0) {
+      throw new AppError(404, 'FRIEND_NOT_FOUND', 'Not friends');
+    }
+  }
+}

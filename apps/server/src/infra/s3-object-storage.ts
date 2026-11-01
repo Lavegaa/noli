@@ -1,4 +1,8 @@
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { Injectable } from '@nestjs/common';
 import type { ObjectStorage } from '../common/ports.js';
 
@@ -30,6 +34,14 @@ export class S3ObjectStorage implements ObjectStorage {
         ContentType: contentType,
       }),
     );
+  }
+
+  async get(key: string): Promise<Buffer> {
+    const res = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    if (!res.Body) throw new Error(`Empty object body: ${key}`);
+    return Buffer.from(await res.Body.transformToByteArray());
   }
 
   url(key: string): string {

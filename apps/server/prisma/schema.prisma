@@ -26,6 +26,9 @@ model Account {
   createdAt        DateTime        @default(now())
   clickers         Clicker[]
   inventoryItems   InventoryItem[]
+  shareCodes       ShareCode[]
+  friendshipsA     Friendship[]    @relation("FriendA")
+  friendshipsB     Friendship[]    @relation("FriendB")
 }
 
 enum InventorySource {
@@ -49,6 +52,7 @@ model Clicker {
   updatedAt        DateTime        @updatedAt
   creator          Account         @relation(fields: [creatorId], references: [id])
   inventoryItems   InventoryItem[]
+  shareCodes       ShareCode[]
 
   @@index([creatorId])
 }
@@ -67,4 +71,29 @@ model InventoryItem {
   clicker         Clicker         @relation(fields: [clickerId], references: [id])
 
   @@unique([accountId, clickerId])
+}
+
+model ShareCode {
+  code        String   @id
+  clickerId   String
+  creatorId   String
+  allowFriend Boolean
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  clicker     Clicker  @relation(fields: [clickerId], references: [id])
+  creator     Account  @relation(fields: [creatorId], references: [id])
+
+  @@index([clickerId])
+}
+
+/// accountA < accountB 로 정렬해 저장한다(쌍마다 한 행).
+model Friendship {
+  accountA  String
+  accountB  String
+  createdAt DateTime @default(now())
+  a         Account  @relation("FriendA", fields: [accountA], references: [id])
+  b         Account  @relation("FriendB", fields: [accountB], references: [id])
+
+  @@id([accountA, accountB])
+  @@index([accountB])
 }

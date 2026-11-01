@@ -50,6 +50,11 @@ export class MemoryStorage implements ObjectStorage {
   async put(key: string, bytes: Buffer, contentType: string): Promise<void> {
     this.objects.set(key, { bytes, contentType });
   }
+  async get(key: string): Promise<Buffer> {
+    const object = this.objects.get(key);
+    if (!object) throw new Error(`No such object: ${key}`);
+    return object.bytes;
+  }
   url(key: string): string {
     return `memory://${key}`;
   }

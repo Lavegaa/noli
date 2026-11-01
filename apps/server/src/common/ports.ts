@@ -16,6 +16,7 @@ export const AUTH_VERIFIER = Symbol('AUTH_VERIFIER');
 
 export interface ObjectStorage {
   put(key: string, bytes: Buffer, contentType: string): Promise<void>;
+  get(key: string): Promise<Buffer>;
   url(key: string): string;
 }
 export const OBJECT_STORAGE = Symbol('OBJECT_STORAGE');
