@@ -12,8 +12,10 @@ import { PrismaService } from '../prisma/prisma.service.js';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
-/** 신고로 숨겨진 클릭커는 칸도 차지하지 않고 목록에도 나오지 않는다. */
-const VISIBLE = { clicker: { hidden: false } } as const;
+/** 신고로 숨겨졌거나 제작자가 지운 클릭커는 칸도 차지하지 않고 목록에도 나오지 않는다. */
+const VISIBLE = {
+  clicker: { hidden: false, deletedByCreator: false },
+} as const;
 
 @Injectable()
 export class InventoryService {
@@ -141,7 +143,7 @@ export class InventoryService {
 
   /**
    * 내가 만든(created) 항목을 지우면 클릭커 삭제와 같다: 공유 코드가 무효가 되고
-   * 더는 수정·공유할 수 없다(Ruling N). 받은 항목은 내 보관함에서만 빠진다.
+   * 더는 수정·공유할 수 없고 모두에게 사라진다. 받은 항목은 내 보관함에서만 빠진다.
    */
   async remove(accountId: string, itemId: string): Promise<void> {
     const item = await this.prisma.inventoryItem.findFirst({

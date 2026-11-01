@@ -341,7 +341,7 @@ describe('clickers & inventory (e2e)', () => {
     expect(await usedSlots(token)).toBe(0);
   });
 
-  it('creator delete keeps the receiver inventory item', async () => {
+  it('creator delete removes the clicker everywhere, receivers included', async () => {
     const creator = await maker();
     const receiver = await maker();
     const { body } = await upload(creator).expect(201);
@@ -349,7 +349,7 @@ describe('clickers & inventory (e2e)', () => {
     const prisma = app.get(PrismaService);
     const receiverAccount = (await http().get('/me').set(bearer(receiver)))
       .body;
-    await prisma.inventoryItem.create({
+    const item = await prisma.inventoryItem.create({
       data: {
         accountId: receiverAccount.id,
         clickerId: body.clickerId,
@@ -357,13 +357,14 @@ describe('clickers & inventory (e2e)', () => {
         receivedVersion: 1,
       },
     });
+    expect(await usedSlots(receiver)).toBe(1);
 
     await http()
       .delete(`/clickers/${body.clickerId}`)
       .set(bearer(creator))
       .expect(204);
     expect(await usedSlots(creator)).toBe(0);
-    expect(await usedSlots(receiver)).toBe(1);
+    expect(await usedSlots(receiver)).toBe(0);
     const row = await prisma.clicker.findUniqueOrThrow({
       where: { id: body.clickerId },
     });
@@ -373,14 +374,19 @@ describe('clickers & inventory (e2e)', () => {
       .get('/inventory')
       .set(bearer(receiver))
       .expect(200);
-    expect(inv.body.items).toHaveLength(1);
-    expect(inv.body.items[0].source).toBe('received');
-    // 받은 사람은 제작자가 만든 기본 장착 설정으로 재생한다.
-    expect(inv.body.items[0].equip).toEqual({ sound: 'pop', effect: 'spark' });
+    expect(inv.body.items).toHaveLength(0);
+    for (const token of [receiver, creator]) {
+      const res = await http()
+        .get(`/clickers/${body.clickerId}`)
+        .set(bearer(token))
+        .expect(404);
+      expect(res.body.error.code).toBe('CLICKER_UNAVAILABLE');
+    }
     await http()
-      .get(`/clickers/${body.clickerId}`)
+      .put(`/inventory/${item.id}/equip`)
       .set(bearer(receiver))
-      .expect(200);
+      .send({ sound: 'pop' })
+      .expect(404);
     // 제작자는 더 이상 수정할 수 없다.
     await http()
       .put(`/clickers/${body.clickerId}`)

@@ -20,13 +20,13 @@ export class ClickersService {
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
   ) {}
 
-  /** 숨겨진 클릭커는 404 CLICKER_UNAVAILABLE. Task 4, 5, 8이 쓴다. */
+  /** 숨겨졌거나 제작자가 지운 클릭커는 404 CLICKER_UNAVAILABLE. Task 4, 5, 8이 쓴다. */
   async getVisible(id: string): Promise<Clicker> {
     const clicker = await this.prisma.clicker.findUnique({ where: { id } });
     if (!clicker) {
       throw new AppError(404, 'CLICKER_NOT_FOUND', 'Clicker not found');
     }
-    if (clicker.hidden) {
+    if (clicker.hidden || clicker.deletedByCreator) {
       throw new AppError(404, 'CLICKER_UNAVAILABLE', 'Clicker is unavailable');
     }
     return clicker;
@@ -94,7 +94,7 @@ export class ClickersService {
     });
   }
 
-  /** 제작자 보관함에서 빠지고 공유 코드가 모두 무효가 된다. 받은 사람의 보관함은 그대로다. */
+  /** 클릭커가 모두에게서 사라진다: 모든 보관함에서 빠지고 공유 코드가 무효가 된다. */
   async remove(account: Account, id: string): Promise<void> {
     await this.ownedByCreator(account, id);
     await this.prisma.$transaction((tx) => retireClicker(tx, account.id, id));

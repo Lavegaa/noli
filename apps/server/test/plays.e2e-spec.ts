@@ -191,6 +191,17 @@ describe('plays, rankings, news (e2e)', () => {
     expect(res.body.error.code).toBe('CLICKER_UNAVAILABLE');
   });
 
+  it('creator-deleted clicker -> receiver play 404 CLICKER_UNAVAILABLE', async () => {
+    const { maker, friend, clickerId } = await friendsWithClicker();
+    await http()
+      .delete(`/clickers/${clickerId}`)
+      .set(bearer(maker))
+      .expect(204);
+    const res = await play(friend, clickerId);
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('CLICKER_UNAVAILABLE');
+  });
+
   it('two plays: bestCombo is the max, totalTaps is the sum', async () => {
     const maker = await adult();
     const clickerId = await upload(maker);
@@ -375,6 +386,70 @@ describe('plays, rankings, news (e2e)', () => {
       value: 3, // 1 received + 2 plays by friend
       rank: 1,
     });
+  });
+
+  it('creatorPopularity week branch counts only this week; hidden and deleted clickers drop out of every ranking', async () => {
+    const { maker, friend, clickerId } = await friendsWithClicker(); // received now (this week)
+    // last week: friend plays (does not count for the week branch)
+    fakes.clock.set(
+      new Date(new Date('2026-01-07T03:00:00Z').getTime() - 7 * DAY_MS),
+    );
+    await play(friend, clickerId, { maxCombo: 40, taps: 40 }).expect(201);
+    fakes.clock.set('2026-01-07T03:00:00Z');
+    await play(friend, clickerId, { maxCombo: 30, taps: 30 }).expect(201);
+
+    const makerId = await accountId(maker);
+    const friendId = await accountId(friend);
+    const rank = async (metric: string, period: string) =>
+      (
+        await http()
+          .get(`/rankings/friends?metric=${metric}&period=${period}`)
+          .set(bearer(maker))
+          .expect(200)
+      ).body as { accountId: string; value: number }[];
+    const valueOf = (
+      rows: { accountId: string; value: number }[],
+      id: string,
+    ) => rows.find((r) => r.accountId === id)?.value;
+
+    expect(valueOf(await rank('creatorPopularity', 'week'), makerId)).toBe(2); // 1 received + 1 play
+    expect(valueOf(await rank('creatorPopularity', 'all'), makerId)).toBe(3);
+    expect(valueOf(await rank('maxCombo', 'all'), friendId)).toBe(40);
+
+    await http()
+      .delete(`/clickers/${clickerId}`)
+      .set(bearer(maker))
+      .expect(204);
+    for (const period of ['week', 'all']) {
+      expect(valueOf(await rank('creatorPopularity', period), makerId)).toBe(0);
+      expect(valueOf(await rank('maxCombo', period), friendId)).toBe(0);
+      expect(valueOf(await rank('totalTaps', period), friendId)).toBe(0);
+    }
+  });
+
+  it('a report-hidden clicker no longer counts in rankings', async () => {
+    const { maker, friend, clickerId } = await friendsWithClicker();
+    await play(friend, clickerId, { maxCombo: 7, taps: 9 }).expect(201);
+    const makerId = await accountId(maker);
+    const friendId = await accountId(friend);
+    await prisma.clicker.update({
+      where: { id: clickerId },
+      data: { hidden: true },
+    });
+    const get = async (metric: string) =>
+      (
+        await http()
+          .get(`/rankings/friends?metric=${metric}&period=all`)
+          .set(bearer(maker))
+          .expect(200)
+      ).body as { accountId: string; value: number }[];
+    expect(
+      (await get('totalTaps')).find((r) => r.accountId === friendId)?.value,
+    ).toBe(0);
+    expect(
+      (await get('creatorPopularity')).find((r) => r.accountId === makerId)
+        ?.value,
+    ).toBe(0);
   });
 
   it('rejects an unknown metric/period with 400', async () => {

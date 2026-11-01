@@ -501,8 +501,8 @@ describe('share, redeem, friends (e2e)', () => {
     }
   });
 
-  describe('creator deletes the clicker (Ruling N)', () => {
-    it('DELETE /clickers/:id -> old and reshared codes 404 CODE_INVALID, existing receiver keeps the item', async () => {
+  describe('creator deletes the clicker (removed everywhere)', () => {
+    it('DELETE /clickers/:id -> old and reshared codes 404 CODE_INVALID, receivers lose the item, holders cannot reshare', async () => {
       const { maker, clickerId, code } = await sharedCode();
       const receiver = guest();
       await redeem(receiver, code).expect(200);
@@ -522,9 +522,40 @@ describe('share, redeem, friends (e2e)', () => {
       }
       const prisma = app.get(PrismaService);
       expect(await prisma.shareCode.count({ where: { clickerId } })).toBe(0);
-      const inv = await inventory(receiver);
-      expect(inv.items).toHaveLength(1);
-      expect(inv.items[0].clicker.id).toBe(clickerId);
+      expect((await inventory(receiver)).items).toHaveLength(0);
+      expect((await inventory(holder)).items).toHaveLength(0);
+      const res = await share(holder, clickerId);
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('CLICKER_UNAVAILABLE');
+      const preview = await http().get(`/share/${code}`).set(bearer(guest()));
+      expect(preview.status).toBe(404);
+      expect(preview.body.error.code).toBe('CODE_INVALID');
+    });
+
+    it('a code that survives the delete (race) is still CODE_INVALID for preview and redeem', async () => {
+      const { maker, clickerId, code } = await sharedCode();
+      await http()
+        .delete(`/clickers/${clickerId}`)
+        .set(bearer(maker))
+        .expect(204);
+      const prisma = app.get(PrismaService);
+      await prisma.shareCode.create({
+        data: {
+          code: 'RACE23',
+          clickerId,
+          creatorId: await idOf(maker),
+          issuerId: await idOf(maker),
+          allowFriend: false,
+          expiresAt: new Date(Date.now() + DAY_MS),
+        },
+      });
+      for (const c of ['RACE23', code]) {
+        const receiver = guest();
+        expect((await redeem(receiver, c)).body.error.code).toBe(
+          'CODE_INVALID',
+        );
+        expect((await inventory(receiver)).items).toHaveLength(0);
+      }
     });
 
     it('deleting the created inventory item -> codes revoked, creator can no longer share or PUT it', async () => {
@@ -551,8 +582,8 @@ describe('share, redeem, friends (e2e)', () => {
       expect(old.body.error.code).toBe('CODE_INVALID');
 
       const again = await share(maker, clickerId);
-      expect(again.status).toBe(403);
-      expect(again.body.error.code).toBe('NOT_OWNER');
+      expect(again.status).toBe(404);
+      expect(again.body.error.code).toBe('CLICKER_UNAVAILABLE');
       const put = await http()
         .put(`/clickers/${clickerId}`)
         .set(bearer(maker))
@@ -561,7 +592,7 @@ describe('share, redeem, friends (e2e)', () => {
         .field('faceDetected', 'false');
       expect(put.status).toBe(404);
       expect(put.body.error.code).toBe('CLICKER_NOT_FOUND');
-      expect((await inventory(receiver)).items).toHaveLength(1);
+      expect((await inventory(receiver)).items).toHaveLength(0);
     });
 
     it('deleting a received inventory item only removes it from my inventory', async () => {

@@ -59,8 +59,7 @@ export class ShareService {
     const holds = await this.prisma.inventoryItem.findUnique({
       where: { accountId_clickerId: { accountId: account.id, clickerId } },
     });
-    const isCreator =
-      clicker.creatorId === account.id && !clicker.deletedByCreator;
+    const isCreator = clicker.creatorId === account.id;
     if (!holds && !isCreator) {
       throw new AppError(403, 'NOT_OWNER', 'Only the owner can share this');
     }
@@ -130,6 +129,11 @@ export class ShareService {
         // 계정 행을 먼저 잠근다. 같은 계정의 중복 수령이 줄을 서므로
         // 뒤따르는 요청은 앞 요청이 넣은 항목을 보고 멱등 결과를 받는다.
         await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${account.id} FOR NO KEY UPDATE`;
+        // 사용 시점 확인: 제작자 삭제와 동시에 들어와도 지워진 클릭커는 받을 수 없다.
+        // 삭제 트랜잭션이 이 행을 갱신하므로 공유 잠금으로 순서가 정해진다.
+        const live = await tx.$queryRaw<{ deletedByCreator: boolean }[]>`
+          SELECT "deletedByCreator" FROM "Clicker" WHERE "id" = ${clicker.id} FOR SHARE`;
+        if (live[0]?.deletedByCreator ?? true) throw invalidCode();
         const existing = await tx.inventoryItem.findUnique({
           where: {
             accountId_clickerId: {
@@ -212,6 +216,12 @@ export class ShareService {
       where: { code: code.toUpperCase() },
     });
     if (!share) throw invalidCode();
+    // 제작자가 지운 클릭커의 코드는 남아 있어도 없는 코드와 같다.
+    const owner = await this.prisma.clicker.findUnique({
+      where: { id: share.clickerId },
+      select: { deletedByCreator: true },
+    });
+    if (!owner || owner.deletedByCreator) throw invalidCode();
     return share;
   }
 

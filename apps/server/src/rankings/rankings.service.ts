@@ -56,7 +56,12 @@ export class RankingsService {
     since: Date,
   ): Promise<Map<string, number>> {
     if (metric === 'creatorPopularity') return this.popularity(ids, since);
-    const where = { accountId: { in: ids }, playedAt: { gte: since } };
+    // 숨겨졌거나 제작자가 지운 클릭커의 플레이는 세지 않는다.
+    const where = {
+      accountId: { in: ids },
+      playedAt: { gte: since },
+      clicker: { hidden: false, deletedByCreator: false },
+    };
     const groups = await this.prisma.playRecord.groupBy({
       by: ['accountId'],
       where,
@@ -73,7 +78,7 @@ export class RankingsService {
 
   /**
    * 받은 횟수(source='received'인 보관함 항목 생성 시각 기준)와 다른 사람의 플레이 수.
-   * 둘 다 `since` 이후만 센다.
+   * 둘 다 `since` 이후만 세고, 숨겨졌거나 지워진 클릭커는 제외한다.
    */
   private async popularity(
     ids: string[],
@@ -83,12 +88,14 @@ export class RankingsService {
       SELECT c."creatorId" AS id, COUNT(*)::int AS n
       FROM "InventoryItem" i JOIN "Clicker" c ON c."id" = i."clickerId"
       WHERE c."creatorId" = ANY(${ids}::text[])
+        AND c."hidden" = false AND c."deletedByCreator" = false
         AND i."source" = 'received' AND i."createdAt" >= ${since}
       GROUP BY c."creatorId"
       UNION ALL
       SELECT c."creatorId" AS id, COUNT(*)::int AS n
       FROM "PlayRecord" p JOIN "Clicker" c ON c."id" = p."clickerId"
       WHERE c."creatorId" = ANY(${ids}::text[])
+        AND c."hidden" = false AND c."deletedByCreator" = false
         AND p."accountId" <> c."creatorId" AND p."playedAt" >= ${since}
       GROUP BY c."creatorId"`;
     const totals = new Map<string, number>();
