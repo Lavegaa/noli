@@ -1,0 +1,7 @@
+.superpowers/
+.DS_Store
+node_modules/
+.env
+
+# 리서치 자료(남의 이미지·개인 사진 포함) — 로컬에만 보관
+docs/research/
