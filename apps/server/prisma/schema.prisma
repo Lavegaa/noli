@@ -56,6 +56,8 @@ model Clicker {
   specJson         Json
   faceDetected     Boolean         @default(false)
   hidden           Boolean         @default(false)
+  /// 공유 시 이미지 검사에서 걸려 숨겨졌다. 신고 복원(restored)으로는 절대 풀리지 않는다.
+  hiddenByScan     Boolean         @default(false)
   deletedByCreator Boolean         @default(false)
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt

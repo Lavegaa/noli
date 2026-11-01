@@ -174,6 +174,33 @@ describe('reports and blocks (e2e)', () => {
       await http().get(`/clickers/${clickerId}`).set(bearer(maker)).expect(200);
     });
 
+    it('a scan-hidden clicker stays hidden after a report is restored', async () => {
+      const maker = await adult();
+      const clickerId = await upload(maker);
+      fakes.scanner.result = { adult: true, violence: false };
+      try {
+        const rejected = await http()
+          .post(`/clickers/${clickerId}/share`)
+          .set(bearer(maker))
+          .send({ allowFriend: false });
+        expect(rejected.status).toBe(422);
+      } finally {
+        fakes.scanner.result = { adult: false, violence: false };
+      }
+      await http().get(`/clickers/${clickerId}`).set(bearer(maker)).expect(404);
+
+      await report(guest(), clickerId).expect(200);
+      const stored = await prisma.report.findFirstOrThrow({
+        where: { clickerId },
+      });
+      await reports.resolve(stored.id, 'restored');
+      const view = await http()
+        .get(`/clickers/${clickerId}`)
+        .set(bearer(maker));
+      expect(view.status).toBe(404);
+      expect(view.body.error.code).toBe('CLICKER_UNAVAILABLE');
+    });
+
     it('resolve(removed) keeps it hidden; unknown report -> 404', async () => {
       const { maker, clickerId, r1 } = await scene();
       await report(r1, clickerId).expect(200);

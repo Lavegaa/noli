@@ -1,13 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { AppError } from '../common/app-error.js';
+import { sorted } from '../common/pair.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 type Db = Prisma.TransactionClient | PrismaService;
-
-/** 쌍을 항상 a < b 로 정렬한다(Friendship 저장 순서와 같다). */
-const sorted = (x: string, y: string): [string, string] =>
-  x < y ? [x, y] : [y, x];
 
 @Injectable()
 export class BlocksService {

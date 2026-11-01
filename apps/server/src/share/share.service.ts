@@ -74,7 +74,7 @@ export class ShareService {
       if (verdict.adult || verdict.violence) {
         await this.prisma.clicker.update({
           where: { id: clickerId },
-          data: { hidden: true },
+          data: { hidden: true, hiddenByScan: true },
         });
         throw new AppError(422, 'CONTENT_REJECTED', 'Image was rejected');
       }

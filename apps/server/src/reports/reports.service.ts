@@ -66,7 +66,7 @@ export class ReportsService {
   }
 
   /**
-   * 관리자 웹이 쓴다. restored면 이 클릭커에 열린 신고(pending/removed)가 더 없을 때만 숨김을 푼다.
+   * 관리자 웹이 쓴다. restored면 이 클릭커에 열린 신고(pending/removed)가 더 없고 이미지 검사로 숨겨진 것도 아닐 때만 숨김을 푼다.
    * 처리 후 제작자의 업로드 제한을 다시 계산한다(복원으로 3 미만이 되면 해제).
    */
   async resolve(
@@ -75,7 +75,9 @@ export class ReportsService {
   ): Promise<void> {
     const found = await this.prisma.report.findUnique({
       where: { id: reportId },
-      include: { clicker: { select: { creatorId: true } } },
+      include: {
+        clicker: { select: { creatorId: true, hiddenByScan: true } },
+      },
     });
     if (!found) {
       throw new AppError(404, 'REPORT_NOT_FOUND', 'Report not found');
@@ -85,8 +87,10 @@ export class ReportsService {
     await this.prisma.$transaction(async (tx) => {
       await this.lockCreator(tx, creatorId);
       await tx.report.update({ where: { id: reportId }, data: { status } });
+      // 검사에서 걸려 숨겨진 클릭커는 신고가 복원돼도 계속 숨긴다.
       const stillOpen =
         status === 'removed' ||
+        found.clicker.hiddenByScan ||
         (await tx.report.count({
           where: { clickerId, status: { in: [...OPEN] } },
         })) > 0;
