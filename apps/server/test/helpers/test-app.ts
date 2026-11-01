@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, type Type } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import pg from 'pg';
 import { AppModule } from '../../src/app.module.js';
@@ -34,6 +34,7 @@ export interface Fakes {
 
 export async function createTestApp(
   overrides: Partial<Fakes> = {},
+  extraControllers: Type[] = [],
 ): Promise<{ app: INestApplication; fakes: Fakes }> {
   const fakes: Fakes = {
     clock: new FakeClock(),
@@ -45,7 +46,10 @@ export async function createTestApp(
     notifier: new RecordingNotifier(),
     ...overrides,
   };
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+  const moduleRef = await Test.createTestingModule({
+    imports: [AppModule],
+    controllers: extraControllers,
+  })
     .overrideProvider(CLOCK)
     .useValue(fakes.clock)
     .overrideProvider(RANDOM)

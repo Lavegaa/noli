@@ -6,3 +6,22 @@ generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
 }
+
+enum ConsentStatus {
+  not_required
+  pending
+  granted
+}
+
+model Account {
+  id               String        @id @default(uuid())
+  firebaseUid      String        @unique
+  linkedProviders  String[]
+  birthDate        DateTime?     @db.Date
+  consentStatus    ConsentStatus @default(not_required)
+  storageSlots     Int           @default(6)
+  shards           Int           @default(0)
+  pityCounter      Int           @default(0)
+  uploadRestricted Boolean       @default(false)
+  createdAt        DateTime      @default(now())
+}
