@@ -1,0 +1,25 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: noli
+      POSTGRES_PASSWORD: noli
+      POSTGRES_DB: noli
+    ports:
+      - "5432:5432"
+    volumes:
+      - noli-db:/var/lib/postgresql/data
+
+  db-test:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: noli
+      POSTGRES_PASSWORD: noli
+      POSTGRES_DB: noli_test
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+
+volumes:
+  noli-db:
