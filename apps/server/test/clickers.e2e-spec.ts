@@ -122,6 +122,7 @@ describe('clickers & inventory (e2e)', () => {
   it.each([
     ['not json', 'nope'],
     ['empty name', JSON.stringify({ name: '' })],
+    ['whitespace-only name', JSON.stringify({ name: '   ' })],
     ['no name', JSON.stringify({ foo: 1 })],
     ['array', '[]'],
   ])('bad spec (%s) -> 400 VALIDATION_FAILED', async (_label, bad) => {
@@ -208,6 +209,46 @@ describe('clickers & inventory (e2e)', () => {
     expect(got.body.pressedUrl).toBeUndefined();
     // 칸 수는 그대로
     expect(await usedSlots(token)).toBe(1);
+  });
+
+  it('concurrent PUTs are serialized: distinct versions, no key overwritten', async () => {
+    const token = newToken();
+    const { body } = await upload(token).expect(201);
+    const pngWith = (tag: string) =>
+      Buffer.concat([PNG.subarray(0, 8), Buffer.from(tag)]);
+    const put = (tag: string) =>
+      http()
+        .put(`/clickers/${body.clickerId}`)
+        .set(bearer(token))
+        .attach('idle', pngWith(tag), {
+          filename: 'idle.png',
+          contentType: 'image/png',
+        })
+        .field('spec', spec(tag));
+
+    const [a, b] = await Promise.all([put('AAAA'), put('BBBB')]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    expect([a.body.version, b.body.version].sort((x, y) => x - y)).toEqual([
+      2, 3,
+    ]);
+
+    const key = (v: number) => `clickers/${body.clickerId}/v${v}/idle.png`;
+    const bytesAt = (v: number) =>
+      fakes.storage.objects.get(key(v))?.bytes.subarray(8).toString();
+    const tagByVersion = new Map([
+      [a.body.version, 'AAAA'],
+      [b.body.version, 'BBBB'],
+    ]);
+    expect(bytesAt(2)).toBe(tagByVersion.get(2));
+    expect(bytesAt(3)).toBe(tagByVersion.get(3));
+
+    const got = await http()
+      .get(`/clickers/${body.clickerId}`)
+      .set(bearer(token))
+      .expect(200);
+    expect(got.body.version).toBe(3);
+    expect(got.body.idleUrl).toBe(`memory://${key(3)}`);
+    expect(got.body.name).toBe(tagByVersion.get(3));
   });
 
   it('PUT/DELETE by someone else -> 403 NOT_OWNER', async () => {

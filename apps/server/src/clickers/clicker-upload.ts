@@ -56,7 +56,7 @@ export function parseUpload(
   const name = (spec as { name?: unknown }).name;
   if (
     typeof name !== 'string' ||
-    name.length < 1 ||
+    name.trim().length < 1 ||
     Array.from(name).length > GAME.clicker.nameMaxLength
   ) {
     throw invalid(

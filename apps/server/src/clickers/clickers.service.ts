@@ -67,27 +67,30 @@ export class ClickersService {
     });
   }
 
-  /** 제작자가 전체를 새로 올린다(pressed를 빼면 pressed 없음). 새 버전 키에 저장해 이전 버전 파일은 남긴다. */
+  /**
+   * 제작자가 전체를 새로 올린다(pressed를 빼면 pressed 없음). 새 버전 키에 저장해 이전 버전 파일은 남긴다.
+   * Clicker 행을 먼저 잠가 버전을 확정한 뒤 파일을 쓴다. 동시에 들어온 PUT은 순서대로
+   * 처리되어 서로 다른 버전 키를 쓰므로 남의 파일을 덮어쓰지 않고, 저장이 실패하면 롤백된다.
+   */
   async update(account: Account, id: string, upload: ParsedUpload) {
-    const current = await this.ownedByCreator(account, id);
-    const version = current.version + 1;
-    await this.storeImages(id, version, upload);
-    // 동시에 두 번 PUT해도 같은 버전을 덮어쓰지 않도록 읽은 버전을 조건으로 건다.
-    const { count } = await this.prisma.clicker.updateMany({
-      where: { id, version: current.version },
-      data: {
-        name: upload.name,
-        version,
-        idleKey: keyOf(id, version, 'idle'),
-        pressedKey: upload.pressed ? keyOf(id, version, 'pressed') : null,
-        specJson: upload.spec as Prisma.InputJsonObject,
-        faceDetected: upload.faceDetected,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Clicker" WHERE "id" = ${id} FOR UPDATE`;
+      const current = await this.ownedByCreator(account, id, tx);
+      const version = current.version + 1;
+      await this.storeImages(id, version, upload);
+      await tx.clicker.update({
+        where: { id },
+        data: {
+          name: upload.name,
+          version,
+          idleKey: keyOf(id, version, 'idle'),
+          pressedKey: upload.pressed ? keyOf(id, version, 'pressed') : null,
+          specJson: upload.spec as Prisma.InputJsonObject,
+          faceDetected: upload.faceDetected,
+        },
+      });
+      return { clickerId: id, version };
     });
-    if (count === 0) {
-      throw new AppError(409, 'CONFLICT', 'Clicker was modified concurrently');
-    }
-    return { clickerId: id, version };
   }
 
   /** 제작자 보관함에서만 빠진다. 받은 사람의 보관함은 그대로다. */
@@ -104,8 +107,12 @@ export class ClickersService {
     ]);
   }
 
-  private async ownedByCreator(account: Account, id: string): Promise<Clicker> {
-    const clicker = await this.prisma.clicker.findUnique({ where: { id } });
+  private async ownedByCreator(
+    account: Account,
+    id: string,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<Clicker> {
+    const clicker = await db.clicker.findUnique({ where: { id } });
     if (!clicker || clicker.deletedByCreator) {
       throw new AppError(404, 'CLICKER_NOT_FOUND', 'Clicker not found');
     }
