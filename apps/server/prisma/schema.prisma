@@ -32,6 +32,7 @@ model Account {
   playRecords      PlayRecord[]
   clickerStats     ClickerStat[]
   news             NewsItem[]
+  dailyQuests      DailyQuest[]
 }
 
 enum InventorySource {
@@ -152,4 +153,20 @@ model NewsItem {
   recipient   Account   @relation(fields: [recipientId], references: [id])
 
   @@index([recipientId, createdAt])
+}
+
+model DailyQuest {
+  accountId         String
+  /// KST `YYYY-MM-DD`
+  day               String
+  questKey          String
+  target            Int
+  progress          Int       @default(0)
+  reward            Int
+  claimedAt         DateTime?
+  /// friend_play가 이미 센 클릭커. 같은 클릭커를 두 번 세지 않는다.
+  countedClickerIds String[]  @default([])
+  account           Account   @relation(fields: [accountId], references: [id])
+
+  @@id([accountId, day, questKey])
 }

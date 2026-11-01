@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { capabilitiesOf, type CapabilityReason } from '../auth/capability.js';
 import { BlocksService } from '../blocks/blocks.service.js';
 import { toClickerView } from '../clickers/clicker-view.js';
@@ -20,6 +21,7 @@ import type { Account, ShareCode } from '../generated/prisma/client.js';
 import { InventoryService } from '../inventory/inventory.service.js';
 import { NewsService } from '../news/news.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { SHARE_REDEEMED, type ShareRedeemedEvent } from './share-events.js';
 
 const MAX_CODE_ATTEMPTS = 5;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -44,6 +46,7 @@ export class ShareService {
     private readonly friends: FriendsService,
     private readonly blocks: BlocksService,
     private readonly news: NewsService,
+    private readonly events: EventEmitter2,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(RANDOM) private readonly random: Random,
     @Inject(IMAGE_SCANNER) private readonly scanner: ImageScanner,
@@ -105,7 +108,7 @@ export class ShareService {
     };
   }
 
-  /** Task 6의 `share.redeemed` 발행도 이 메서드 안에서 한다. */
+  /** 새로 수령했을 때만 `share.redeemed`를 발행한다. */
   async redeem(
     account: Account,
     code: string,
@@ -161,6 +164,15 @@ export class ShareService {
       });
       if (!item) throw e;
       outcome = { itemId: item.id, alreadyOwned: true };
+    }
+
+    if (!outcome.alreadyOwned) {
+      const event: ShareRedeemedEvent = {
+        receiverId: account.id,
+        creatorId: clicker.creatorId,
+      };
+      // 리스너가 실패를 스스로 처리하므로 기다려도 요청이 깨지지 않는다.
+      await this.events.emitAsync(SHARE_REDEEMED, event);
     }
 
     const friend = await this.maybeAddFriend(account, share, addFriend);

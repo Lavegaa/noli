@@ -111,7 +111,8 @@ export class PlaysService {
       maxCombo: input.maxCombo,
       taps: input.taps,
     };
-    this.events.emit(PLAY_RECORDED, event);
+    // 리스너가 실패를 스스로 처리하므로 기다려도 요청이 깨지지 않는다.
+    await this.events.emitAsync(PLAY_RECORDED, event);
 
     if (
       clicker.creatorId !== account.id &&

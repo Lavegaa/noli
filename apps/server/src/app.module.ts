@@ -9,6 +9,7 @@ import { InventoryModule } from './inventory/inventory.module.js';
 import { NewsModule } from './news/news.module.js';
 import { PlaysModule } from './plays/plays.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { QuestsModule } from './quests/quests.module.js';
 import { RankingsModule } from './rankings/rankings.module.js';
 import { ShareModule } from './share/share.module.js';
 
@@ -25,6 +26,7 @@ import { ShareModule } from './share/share.module.js';
     NewsModule,
     PlaysModule,
     RankingsModule,
+    QuestsModule,
   ],
   controllers: [HealthController],
 })
