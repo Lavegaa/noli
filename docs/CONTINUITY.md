@@ -23,7 +23,7 @@
 | 앱 계획 (v1 플레이) | 작성 완료, 미실행 | `docs/superpowers/plans/2026-10-31-v1-app-playable.md` |
 | 화면 디자인 | 탐색 중 — 클릭커 **형태**는 정해짐, 홈·플레이 화면은 다시 그릴 예정 | 캔버스 (아래 §5) |
 | 마스코트 | 컨셉 정함, **기획자가 GPT로 원화 만드는 중** | §4 |
-| git | noli 저장소 클론 완료, 파일 복사만 함. **커밋 0개, push 안 함.** 공개 저장소라 올릴 범위 결정 대기 | `/Users/cudy/projects/noli` |
+| git | 첫 커밋 `8f7205d`를 main에 push함. `docs/research/`는 .gitignore로 제외(로컬에만 있음) | `/Users/cudy/projects/noli` |
 
 **다음 할 일**
 1. 서버 계획 Task 1~9를 실행한다(subagent-driven 방식).
@@ -128,7 +128,7 @@
 - **공개 저장소 주의:**
   - `docs/research/`에는 남의 이미지가 있다: 앱스토어 스크린샷, MakerWorld 사진, 뉴스 사진.
   - 같은 폴더에 기획자의 개인 사진(강아지)도 있다.
-  - push 전에 이 폴더를 저장소에서 뺄지 정해야 한다.
+  - 그래서 이 폴더는 .gitignore로 저장소에서 뺐다. 새 세션에서는 로컬 `/Users/cudy/projects/noli/docs/research`에만 있다.
 
 - **macOS 첫 실행 차단**: Homebrew로 설치한 Flutter의 `dartaotruntime`이 macOS Gatekeeper에 막혔다. 기획자가 직접 `xattr -dr com.apple.quarantine /opt/homebrew/share/flutter`를 실행해 풀었다.
 - **누끼 가장자리**:
