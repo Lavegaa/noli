@@ -14,14 +14,57 @@ enum ConsentStatus {
 }
 
 model Account {
-  id               String        @id @default(uuid())
-  firebaseUid      String        @unique
+  id               String          @id @default(uuid())
+  firebaseUid      String          @unique
   linkedProviders  String[]
-  birthDate        DateTime?     @db.Date
-  consentStatus    ConsentStatus @default(not_required)
-  storageSlots     Int           @default(6)
-  shards           Int           @default(0)
-  pityCounter      Int           @default(0)
-  uploadRestricted Boolean       @default(false)
-  createdAt        DateTime      @default(now())
+  birthDate        DateTime?       @db.Date
+  consentStatus    ConsentStatus   @default(not_required)
+  storageSlots     Int             @default(6)
+  shards           Int             @default(0)
+  pityCounter      Int             @default(0)
+  uploadRestricted Boolean         @default(false)
+  createdAt        DateTime        @default(now())
+  clickers         Clicker[]
+  inventoryItems   InventoryItem[]
+}
+
+enum InventorySource {
+  created
+  received
+  original
+}
+
+model Clicker {
+  id               String          @id @default(uuid())
+  creatorId        String
+  name             String
+  version          Int             @default(1)
+  idleKey          String
+  pressedKey       String?
+  specJson         Json
+  faceDetected     Boolean         @default(false)
+  hidden           Boolean         @default(false)
+  deletedByCreator Boolean         @default(false)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  creator          Account         @relation(fields: [creatorId], references: [id])
+  inventoryItems   InventoryItem[]
+
+  @@index([creatorId])
+}
+
+model InventoryItem {
+  id              String          @id @default(uuid())
+  accountId       String
+  clickerId       String
+  source          InventorySource
+  receivedVersion Int?
+  /// Switch 모델은 Task 7에서 생긴다. 그때까지는 FK 없이 id만 보관한다.
+  soundSwitchId   String?
+  effectSwitchId  String?
+  createdAt       DateTime        @default(now())
+  account         Account         @relation(fields: [accountId], references: [id])
+  clicker         Clicker         @relation(fields: [clickerId], references: [id])
+
+  @@unique([accountId, clickerId])
 }

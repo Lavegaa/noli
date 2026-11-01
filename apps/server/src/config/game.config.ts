@@ -15,5 +15,6 @@ export const GAME = {
     pityPull: 20,
   },
   quests: { dailyCount: 4, rewardMin: 1, rewardMax: 2 },
+  clicker: { maxImageBytes: 2 * 1024 * 1024, nameMaxLength: 20 },
   report: { restrictUploadAt: 3 },
 } as const;

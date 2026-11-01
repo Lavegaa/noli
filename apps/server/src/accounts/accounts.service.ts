@@ -3,12 +3,14 @@ import { AppError } from '../common/app-error.js';
 import { capabilitiesOf, isUnder14 } from '../auth/capability.js';
 import { CLOCK, type Clock } from '../common/ports.js';
 import type { Account } from '../generated/prisma/client.js';
+import { InventoryService } from '../inventory/inventory.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
 export class AccountsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly inventory: InventoryService,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -17,15 +19,10 @@ export class AccountsService {
       id: account.id,
       linked: account.linkedProviders.length > 0,
       storageSlots: account.storageSlots,
-      usedSlots: await this.usedSlots(account.id),
+      usedSlots: await this.inventory.countVisible(account.id),
       shards: account.shards,
       capabilities: capabilitiesOf(account, this.clock.now()),
     };
-  }
-
-  /** 보관함에서 쓰는 칸 수. InventoryItem 모델이 생기는 Task 3에서 count로 채운다. */
-  private async usedSlots(_accountId: string): Promise<number> {
-    return 0;
   }
 
   async setBirthDate(account: Account, birthDate: string): Promise<Account> {
