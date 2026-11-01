@@ -24,4 +24,22 @@ describe('health & error format (e2e)', () => {
     expect(res.body.error.code).toBe('NOT_FOUND');
     expect(typeof res.body.error.message).toBe('string');
   });
+
+  it('malformed JSON body -> 400 VALIDATION_FAILED', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/health')
+      .set('Content-Type', 'application/json')
+      .send('{"broken":')
+      .expect(400);
+    expect(res.body.error.code).toBe('VALIDATION_FAILED');
+  });
+
+  it('oversized body -> 413 PAYLOAD_TOO_LARGE', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/health')
+      .set('Content-Type', 'application/json')
+      .send(JSON.stringify({ blob: 'x'.repeat(200_000) }))
+      .expect(413);
+    expect(res.body.error.code).toBe('PAYLOAD_TOO_LARGE');
+  });
 });

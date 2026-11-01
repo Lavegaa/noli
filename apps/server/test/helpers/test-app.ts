@@ -69,6 +69,7 @@ export async function createTestApp(
 
 /** 테스트 DB(public 스키마)의 모든 테이블을 비운다. 마이그레이션 테이블은 제외. */
 export async function resetDb(): Promise<void> {
+  assertTestDatabase(process.env.DATABASE_URL);
   const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
   await client.connect();
   try {
@@ -81,5 +82,15 @@ export async function resetDb(): Promise<void> {
     await client.query(`TRUNCATE ${tables} RESTART IDENTITY CASCADE`);
   } finally {
     await client.end();
+  }
+}
+
+/** 개발 DB(5432)를 실수로 비우지 않도록 테스트 DB(noli_test)만 허용한다. */
+function assertTestDatabase(url: string | undefined): void {
+  const dbName = url ? new URL(url).pathname.replace(/^\//, '') : '';
+  if (dbName !== 'noli_test') {
+    throw new Error(
+      `resetDb() refused: DATABASE_URL must point at the noli_test database (got "${dbName}"). Run tests via pnpm test:e2e.`,
+    );
   }
 }
