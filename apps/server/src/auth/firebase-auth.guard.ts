@@ -7,7 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { AppError } from '../common/app-error.js';
 import { AUTH_VERIFIER, type AuthVerifier } from '../common/ports.js';
-import { PrismaService } from '../prisma/prisma.service.js';
+import { AccountsService } from '../accounts/accounts.service.js';
 import type { AuthedRequest } from './current-account.decorator.js';
 import { IS_PUBLIC } from './public.decorator.js';
 
@@ -16,7 +16,7 @@ import { IS_PUBLIC } from './public.decorator.js';
 export class FirebaseAuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly prisma: PrismaService,
+    private readonly accounts: AccountsService,
     @Inject(AUTH_VERIFIER) private readonly verifier: AuthVerifier,
   ) {}
 
@@ -36,11 +36,7 @@ export class FirebaseAuthGuard implements CanActivate {
 
     const { uid, providers } = await this.verifier.verify(match[1]);
     const linkedProviders = providers.filter((p) => p !== 'anonymous');
-    req.account = await this.prisma.account.upsert({
-      where: { firebaseUid: uid },
-      create: { firebaseUid: uid, linkedProviders },
-      update: { linkedProviders },
-    });
+    req.account = await this.accounts.ensure(uid, linkedProviders);
     return true;
   }
 }

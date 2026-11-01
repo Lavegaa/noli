@@ -33,6 +33,8 @@ model Account {
   clickerStats     ClickerStat[]
   news             NewsItem[]
   dailyQuests      DailyQuest[]
+  ownedSwitches    OwnedSwitch[]
+  gachaPulls       GachaPull[]
 }
 
 enum InventorySource {
@@ -69,7 +71,7 @@ model InventoryItem {
   clickerId       String
   source          InventorySource
   receivedVersion Int?
-  /// Switch 모델은 Task 7에서 생긴다. 그때까지는 FK 없이 id만 보관한다.
+  /// 장착 덮어쓰기. null이면 클릭커 specJson.defaultEquip을 쓴다. 기존 행·테스트가 임의 id를 쓰므로 FK는 두지 않고 equip API가 소유와 kind를 검증한다.
   soundSwitchId   String?
   effectSwitchId  String?
   createdAt       DateTime        @default(now())
@@ -169,4 +171,55 @@ model DailyQuest {
   account           Account   @relation(fields: [accountId], references: [id])
 
   @@id([accountId, day, questKey])
+}
+
+enum SwitchKind {
+  sound
+  effect
+}
+
+enum SwitchGrade {
+  common
+  rare
+  epic
+  legend
+}
+
+/// 스위치 카탈로그. 시드(prisma/seed.ts)가 만들고 갱신한다.
+model Switch {
+  id        String        @id
+  kind      SwitchKind
+  grade     SwitchGrade
+  name      String
+  /// 모바일 엔진이 해석할 프리셋 이름. 예: { "preset": "spin90" }
+  assetJson Json
+  owners    OwnedSwitch[]
+  pulls     GachaPull[]
+}
+
+model OwnedSwitch {
+  accountId  String
+  switchId   String
+  acquiredAt DateTime @default(now())
+  account    Account  @relation(fields: [accountId], references: [id])
+  switch     Switch   @relation(fields: [switchId], references: [id])
+
+  @@id([accountId, switchId])
+}
+
+model GachaPull {
+  id          String   @id @default(uuid())
+  accountId   String
+  switchId    String
+  duplicate   Boolean
+  refund      Int
+  /// 같은 requestId 재요청에 똑같은 응답을 돌려주려고 결과 시점의 값을 남긴다.
+  shardsAfter Int
+  pityAfter   Int
+  requestId   String   @unique
+  createdAt   DateTime @default(now())
+  account     Account  @relation(fields: [accountId], references: [id])
+  switch      Switch   @relation(fields: [switchId], references: [id])
+
+  @@index([accountId, createdAt])
 }

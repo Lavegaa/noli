@@ -1,6 +1,8 @@
 import { INestApplication, type Type } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import pg from 'pg';
+import { PrismaService } from '../../src/prisma/prisma.service.js';
+import { seedSwitchCatalog } from '../../src/gacha/switch-catalog.js';
 import { AppModule } from '../../src/app.module.js';
 import { configureApp } from '../../src/app.setup.js';
 import {
@@ -68,10 +70,12 @@ export async function createTestApp(
   const app = moduleRef.createNestApplication();
   configureApp(app);
   await app.init();
+  // resetDb는 카탈로그를 지우지 않지만, 새 테스트 DB에서도 멱등 시드로 채워 둔다.
+  await seedSwitchCatalog(app.get(PrismaService));
   return { app, fakes };
 }
 
-/** 테스트 DB(public 스키마)의 모든 테이블을 비운다. 마이그레이션 테이블은 제외. */
+/** 테스트 DB(public 스키마)의 테이블을 비운다. 마이그레이션 테이블과 정적 카탈로그(Switch)는 제외. */
 export async function resetDb(): Promise<void> {
   assertTestDatabase(process.env.DATABASE_URL);
   const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
@@ -79,7 +83,8 @@ export async function resetDb(): Promise<void> {
   try {
     const { rows } = await client.query<{ tablename: string }>(
       `SELECT tablename FROM pg_tables
-       WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`,
+       WHERE schemaname = 'public'
+         AND tablename NOT IN ('_prisma_migrations', 'Switch')`,
     );
     if (rows.length === 0) return;
     const tables = rows.map((r) => `"${r.tablename}"`).join(', ');

@@ -3,6 +3,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AccountsModule } from './accounts/accounts.module.js';
 import { ClickersModule } from './clickers/clickers.module.js';
 import { FriendsModule } from './friends/friends.module.js';
+import { GachaModule } from './gacha/gacha.module.js';
 import { HealthController } from './health/health.controller.js';
 import { InfraModule } from './infra/infra.module.js';
 import { InventoryModule } from './inventory/inventory.module.js';
@@ -27,6 +28,7 @@ import { ShareModule } from './share/share.module.js';
     PlaysModule,
     RankingsModule,
     QuestsModule,
+    GachaModule,
   ],
   controllers: [HealthController],
 })

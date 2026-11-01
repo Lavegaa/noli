@@ -70,18 +70,64 @@ export class InventoryService {
     return {
       storageSlots: account.storageSlots,
       items: items.map((item) => {
-        const fallback = defaultEquipOf(item.clicker.specJson);
         return {
           id: item.id,
           source: item.source,
           clicker: toClickerView(item.clicker, this.storage),
-          equip: {
-            sound: item.soundSwitchId ?? fallback.sound,
-            effect: item.effectSwitchId ?? fallback.effect,
-          },
+          equip: equipOf(item, item.clicker.specJson),
         };
       }),
     };
+  }
+
+  /**
+   * 내가 가진 스위치만, 맞는 칸(sound/effect)에만 장착한다. 하나라도 어긋나면 아무것도 바꾸지 않는다.
+   */
+  async equip(
+    accountId: string,
+    itemId: string,
+    dto: { sound?: string; effect?: string },
+  ) {
+    const item = await this.prisma.inventoryItem.findFirst({
+      where: { id: itemId, accountId, ...VISIBLE },
+      include: { clicker: true },
+    });
+    if (!item) {
+      throw new AppError(404, 'ITEM_NOT_FOUND', 'Inventory item not found');
+    }
+    const slots = [
+      ['sound', dto.sound],
+      ['effect', dto.effect],
+    ] as const;
+    for (const [kind, switchId] of slots) {
+      if (switchId === undefined) continue;
+      const owned = await this.prisma.ownedSwitch.findUnique({
+        where: { accountId_switchId: { accountId, switchId } },
+        include: { switch: true },
+      });
+      if (!owned) {
+        throw new AppError(
+          403,
+          'SWITCH_NOT_OWNED',
+          'You do not own this switch',
+        );
+      }
+      if (owned.switch.kind !== kind) {
+        throw new AppError(
+          400,
+          'SWITCH_KIND_MISMATCH',
+          `Switch ${switchId} is not a ${kind} switch`,
+        );
+      }
+    }
+    const updated = await this.prisma.inventoryItem.update({
+      where: { id: item.id },
+      data: {
+        ...(dto.sound !== undefined && { soundSwitchId: dto.sound }),
+        ...(dto.effect !== undefined && { effectSwitchId: dto.effect }),
+      },
+    });
+    return { id: updated.id, equip: equipOf(updated, item.clicker.specJson) };
   }
 
   async remove(accountId: string, itemId: string): Promise<void> {
@@ -92,6 +138,18 @@ export class InventoryService {
       throw new AppError(404, 'ITEM_NOT_FOUND', 'Inventory item not found');
     }
   }
+}
+
+/** 장착한 칸은 내 스위치, 비운 칸은 클릭커 제작자의 기본 장착. */
+function equipOf(
+  item: { soundSwitchId: string | null; effectSwitchId: string | null },
+  spec: unknown,
+) {
+  const fallback = defaultEquipOf(spec);
+  return {
+    sound: item.soundSwitchId ?? fallback.sound,
+    effect: item.effectSwitchId ?? fallback.effect,
+  };
 }
 
 function defaultEquipOf(spec: unknown): {
