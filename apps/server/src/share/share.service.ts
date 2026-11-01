@@ -122,6 +122,9 @@ export class ShareService {
     let outcome: { itemId: string; alreadyOwned: boolean };
     try {
       outcome = await this.prisma.$transaction(async (tx) => {
+        // 계정 행을 먼저 잠근다. 같은 계정의 중복 수령이 줄을 서므로
+        // 뒤따르는 요청은 앞 요청이 넣은 항목을 보고 멱등 결과를 받는다.
+        await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${account.id} FOR UPDATE`;
         const existing = await tx.inventoryItem.findUnique({
           where: {
             accountId_clickerId: {
@@ -149,12 +152,14 @@ export class ShareService {
       });
     } catch (e) {
       if (!isUniqueViolation(e)) throw e;
-      // 같은 계정의 동시 수령이 먼저 끝났다: 멱등 결과로 돌려준다.
-      const item = await this.prisma.inventoryItem.findUniqueOrThrow({
+      // 다른 연결이 같은 (계정, 클릭커) 항목을 먼저 넣었다면 멱등 결과로 돌려준다.
+      // 항목이 없으면 다른 문장의 유니크 위반이므로 원래 오류를 그대로 던진다.
+      const item = await this.prisma.inventoryItem.findUnique({
         where: {
           accountId_clickerId: { accountId: account.id, clickerId: clicker.id },
         },
       });
+      if (!item) throw e;
       outcome = { itemId: item.id, alreadyOwned: true };
     }
 

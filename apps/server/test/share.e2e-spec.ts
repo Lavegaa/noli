@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { GAME } from '../src/config/game.config.js';
+import { vi } from 'vitest';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { createTestApp, resetDb, type Fakes } from './helpers/test-app.js';
 
@@ -84,7 +85,7 @@ describe('share, redeem, friends (e2e)', () => {
   it('guest calling share -> 403 CAPABILITY_REQUIRED', async () => {
     const maker = guest();
     const clickerId = await upload(maker);
-    const res = await share(maker, clickerId).then((r) => r);
+    const res = await share(maker, clickerId);
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('CAPABILITY_REQUIRED');
   });
@@ -92,7 +93,7 @@ describe('share, redeem, friends (e2e)', () => {
   it('linked adult share -> 6-char code in alphabet, link, expiry, faceWarning', async () => {
     const maker = await adult();
     const clickerId = await upload(maker);
-    const res = await share(maker, clickerId, true).then((r) => r);
+    const res = await share(maker, clickerId, true);
     expect(res.status).toBe(201);
     expect(res.body.code).toHaveLength(GAME.shareCode.length);
     expect(
@@ -111,7 +112,7 @@ describe('share, redeem, friends (e2e)', () => {
     const maker = await adult();
     const clickerId = await upload(maker);
     const other = await adult();
-    const res = await share(other, clickerId).then((r) => r);
+    const res = await share(other, clickerId);
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('NOT_OWNER');
   });
@@ -154,7 +155,7 @@ describe('share, redeem, friends (e2e)', () => {
     const clickerId = await upload(maker);
     fakes.scanner.result = { adult: true, violence: false };
     try {
-      const res = await share(maker, clickerId).then((r) => r);
+      const res = await share(maker, clickerId);
       expect(res.status).toBe(422);
       expect(res.body.error.code).toBe('CONTENT_REJECTED');
     } finally {
@@ -184,7 +185,7 @@ describe('share, redeem, friends (e2e)', () => {
   });
 
   it('preview works for guests and reports expiry', async () => {
-    const { code, clickerId, maker } = await sharedCode();
+    const { code, clickerId } = await sharedCode();
     const res = await http()
       .get(`/share/${code}`)
       .set(bearer(guest()))
@@ -192,7 +193,6 @@ describe('share, redeem, friends (e2e)', () => {
     expect(res.body.clicker.id).toBe(clickerId);
     expect(res.body.creator.id).toBeDefined();
     expect(res.body.expired).toBe(false);
-    expect(maker).toBeDefined();
     fakes.clock.advance(7 * DAY_MS + 60_000);
     try {
       const late = await http()
@@ -234,6 +234,68 @@ describe('share, redeem, friends (e2e)', () => {
     expect(results.map((r) => r.status)).toEqual([200, 200, 200, 200]);
     expect(results.filter((r) => !r.body.alreadyOwned)).toHaveLength(1);
     expect((await inventory(receiver)).items).toHaveLength(1);
+  });
+
+  it('one free slot + concurrent duplicate redeems -> all 200, one new item, no SLOT_FULL', async () => {
+    const { code } = await sharedCode();
+    const receiver = await adult();
+    for (let i = 0; i < GAME.storage.defaultSlots - 1; i++) {
+      await upload(receiver);
+    }
+    const results = await Promise.all(
+      [1, 2, 3, 4, 5].map(() => redeem(receiver, code)),
+    );
+    expect(results.map((r) => r.status)).toEqual([200, 200, 200, 200, 200]);
+    expect(results.filter((r) => !r.body.alreadyOwned)).toHaveLength(1);
+    expect((await inventory(receiver)).items).toHaveLength(
+      GAME.storage.defaultSlots,
+    );
+  });
+
+  describe('unique violation on the inventory insert', () => {
+    const p2002 = () =>
+      Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+
+    it('item won by another connection -> idempotent alreadyOwned', async () => {
+      const { code, clickerId } = await sharedCode();
+      const receiver = guest();
+      const me = (await http().get('/me').set(bearer(receiver))).body.id;
+      const prisma = app.get(PrismaService);
+      const spy = vi
+        .spyOn(prisma, '$transaction')
+        .mockImplementationOnce(async () => {
+          await prisma.inventoryItem.create({
+            data: { accountId: me, clickerId, source: 'received' },
+          });
+          throw p2002();
+        });
+      try {
+        const res = await redeem(receiver, code);
+        expect(res.status).toBe(200);
+        expect(res.body.alreadyOwned).toBe(true);
+        expect((await inventory(receiver)).items).toHaveLength(1);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('unrelated P2002 (no item exists) -> original error rethrown, nothing added', async () => {
+      const { code } = await sharedCode();
+      const receiver = guest();
+      const prisma = app.get(PrismaService);
+      const spy = vi
+        .spyOn(prisma, '$transaction')
+        .mockImplementationOnce(async () => {
+          throw p2002();
+        });
+      try {
+        const res = await redeem(receiver, code);
+        expect(res.status).toBe(500);
+        expect((await inventory(receiver)).items).toHaveLength(0);
+      } finally {
+        spy.mockRestore();
+      }
+    });
   });
 
   it('full inventory -> 409 SLOT_FULL, items unchanged', async () => {
