@@ -19,14 +19,14 @@
 |---|---|---|
 | POC (Flutter Web) | 완료 — 사진 분리, 클릭커 플레이, 테스트 52개 통과 | `apps/mobile` |
 | 상세 기획 v1~v2 | 확정 | `docs/product/2026-10-31-clicker-product-design.md` |
-| 서버 계획 (v1 기반) | 작성 완료, **실행 시작 (Task 1부터)** | `docs/superpowers/plans/2026-10-31-v1-server-foundation.md` |
+| 서버 (v1 기반) | **Task 1~9 + 최종 리뷰 수정 완료** — `feat/server-foundation` 브랜치(미push, 미merge). 단위 18 / e2e 163 통과. 리뷰 지적 모두 해결 | `apps/server`, 진행 기록 `.superpowers/sdd/2026-10-31-v1-server-foundation/` (로컬, git 제외) |
 | 앱 계획 (v1 플레이) | 작성 완료, 미실행 | `docs/superpowers/plans/2026-10-31-v1-app-playable.md` |
 | 화면 디자인 | 탐색 중 — 클릭커 **형태**는 정해짐, 홈·플레이 화면은 다시 그릴 예정 | 캔버스 (아래 §5) |
 | 마스코트 | 컨셉 정함, **기획자가 GPT로 원화 만드는 중** | §4 |
-| git | noli 저장소 클론 완료, 파일 복사만 함. **커밋 0개, push 안 함.** 공개 저장소라 올릴 범위 결정 대기 | `/Users/cudy/projects/noli` |
+| git | 첫 커밋 `8f7205d`를 main에 push함. `docs/research/`는 .gitignore로 제외(로컬에만 있음) | `/Users/cudy/projects/noli` |
 
 **다음 할 일**
-1. 서버 계획 Task 1~9를 실행한다(subagent-driven 방식).
+1. 서버: 브랜치 merge/PR 결정. 배포 전 필수 환경변수 검증, 신고 횟수 제한(공개 전)은 미룬 항목.
 2. 마스코트 원화가 오면 누끼 → 캡+몸통 클릭커 → 메인 팔레트를 뽑는다.
 3. 그 팔레트로 G2(게임) 홈·플레이·결과 화면을 다시 그린다.
 4. 앱 계획을 실행한다. Xcode 설치가 필요하고, 기획자가 macOS 업그레이드 후 설치 예정이었다.
@@ -64,6 +64,7 @@
 - 스위치 합성 대신 장착 칸을 늘린다.
 
 **안전**
+- 서버 규칙(2026-11-01): 생년월일은 한 번만 입력, 사진 업로드는 공유 권한이 있을 때만, 클릭커를 지우면 모든 곳에서 사라짐(받은 사람 보관함·플레이·공유·랭킹 모두, 칸 반환), 다시 공유한 코드로는 코드를 건넨 사람과만 친구가 됨, 차단하면 친구 관계도 끊김, 이미지 검사로 숨긴 클릭커는 신고 복구로 풀리지 않음.
 - 클릭커를 만드는 순간 얼굴 감지와 동의 확인을 한다.
 - 신고 3건이 쌓이면 제작자의 업로드를 제한한다.
 
@@ -125,10 +126,13 @@
 
 ## 6. 작업하며 알게 된 함정
 
+- **Prisma AI 안전장치:** `prisma migrate reset`은 AI 에이전트가 실행하면 거부된다. 테스트 DB는 tmpfs 컨테이너 + `migrate deploy` + 테이블 TRUNCATE로 운영한다. 안전장치를 우회하지 않는다.
+- **스위치 카탈로그:** 서버가 켜질 때 자동으로 넣는다(멱등). 서버를 여러 대로 늘리기 전에 동시 시작 경합을 막아야 한다.
+
 - **공개 저장소 주의:**
   - `docs/research/`에는 남의 이미지가 있다: 앱스토어 스크린샷, MakerWorld 사진, 뉴스 사진.
   - 같은 폴더에 기획자의 개인 사진(강아지)도 있다.
-  - push 전에 이 폴더를 저장소에서 뺄지 정해야 한다.
+  - 그래서 이 폴더는 .gitignore로 저장소에서 뺐다. 새 세션에서는 로컬 `/Users/cudy/projects/noli/docs/research`에만 있다.
 
 - **macOS 첫 실행 차단**: Homebrew로 설치한 Flutter의 `dartaotruntime`이 macOS Gatekeeper에 막혔다. 기획자가 직접 `xattr -dr com.apple.quarantine /opt/homebrew/share/flutter`를 실행해 풀었다.
 - **누끼 가장자리**:

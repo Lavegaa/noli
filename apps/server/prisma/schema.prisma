@@ -1,0 +1,293 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+enum ConsentStatus {
+  not_required
+  pending
+  granted
+}
+
+model Account {
+  id               String          @id @default(uuid())
+  firebaseUid      String          @unique
+  linkedProviders  String[]
+  birthDate        DateTime?       @db.Date
+  consentStatus    ConsentStatus   @default(not_required)
+  storageSlots     Int             @default(6)
+  shards           Int             @default(0)
+  pityCounter      Int             @default(0)
+  uploadRestricted Boolean         @default(false)
+  createdAt        DateTime        @default(now())
+  clickers         Clicker[]
+  inventoryItems   InventoryItem[]
+  shareCodes       ShareCode[]
+  issuedCodes      ShareCode[]     @relation("ShareIssuer")
+  friendshipsA     Friendship[]    @relation("FriendA")
+  friendshipsB     Friendship[]    @relation("FriendB")
+  playRecords      PlayRecord[]
+  clickerStats     ClickerStat[]
+  news             NewsItem[]
+  dailyQuests      DailyQuest[]
+  ownedSwitches    OwnedSwitch[]
+  gachaPulls       GachaPull[]
+  reports          Report[]
+  blocksGiven      Block[]         @relation("Blocker")
+  blocksReceived   Block[]         @relation("Blocked")
+  purchases        Purchase[]
+}
+
+enum InventorySource {
+  created
+  received
+  original
+}
+
+model Clicker {
+  id               String          @id @default(uuid())
+  creatorId        String
+  name             String
+  version          Int             @default(1)
+  idleKey          String
+  pressedKey       String?
+  specJson         Json
+  faceDetected     Boolean         @default(false)
+  hidden           Boolean         @default(false)
+  /// 공유 시 이미지 검사에서 걸려 숨겨졌다. 신고 복원(restored)으로는 절대 풀리지 않는다.
+  hiddenByScan     Boolean         @default(false)
+  deletedByCreator Boolean         @default(false)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  creator          Account         @relation(fields: [creatorId], references: [id])
+  inventoryItems   InventoryItem[]
+  shareCodes       ShareCode[]
+  playRecords      PlayRecord[]
+  stats            ClickerStat[]
+  reports          Report[]
+
+  @@index([creatorId])
+}
+
+model InventoryItem {
+  id              String          @id @default(uuid())
+  accountId       String
+  clickerId       String
+  source          InventorySource
+  receivedVersion Int?
+  /// 장착 덮어쓰기. null이면 클릭커 specJson.defaultEquip을 쓴다. 기존 행·테스트가 임의 id를 쓰므로 FK는 두지 않고 equip API가 소유와 kind를 검증한다.
+  soundSwitchId   String?
+  effectSwitchId  String?
+  createdAt       DateTime        @default(now())
+  account         Account         @relation(fields: [accountId], references: [id])
+  clicker         Clicker         @relation(fields: [clickerId], references: [id])
+
+  @@unique([accountId, clickerId])
+}
+
+/// creatorId는 클릭커 제작자, issuerId는 이 코드를 만든 계정(제작자 또는 다시 공유한 보유자).
+model ShareCode {
+  code        String   @id
+  clickerId   String
+  creatorId   String
+  issuerId    String
+  allowFriend Boolean
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  clicker     Clicker  @relation(fields: [clickerId], references: [id])
+  creator     Account  @relation(fields: [creatorId], references: [id])
+  issuer      Account  @relation("ShareIssuer", fields: [issuerId], references: [id])
+
+  @@index([clickerId])
+}
+
+/// accountA < accountB 로 정렬해 저장한다(쌍마다 한 행).
+model Friendship {
+  accountA  String
+  accountB  String
+  createdAt DateTime @default(now())
+  a         Account  @relation("FriendA", fields: [accountA], references: [id])
+  b         Account  @relation("FriendB", fields: [accountB], references: [id])
+
+  @@id([accountA, accountB])
+  @@index([accountB])
+}
+
+enum PlayMode {
+  free
+  timed10
+}
+
+model PlayRecord {
+  id         String   @id @default(uuid())
+  accountId  String
+  clickerId  String
+  mode       PlayMode
+  score      Int
+  maxCombo   Int
+  taps       Int
+  durationMs Int
+  playedAt   DateTime
+  account    Account  @relation(fields: [accountId], references: [id])
+  clicker    Clicker  @relation(fields: [clickerId], references: [id])
+
+  @@index([accountId, playedAt])
+  @@index([clickerId, playedAt])
+}
+
+model ClickerStat {
+  accountId String
+  clickerId String
+  bestScore Int
+  bestCombo Int
+  totalTaps Int
+  account   Account @relation(fields: [accountId], references: [id])
+  clicker   Clicker @relation(fields: [clickerId], references: [id])
+
+  @@id([accountId, clickerId])
+}
+
+enum NewsType {
+  friend_record
+  received
+}
+
+model NewsItem {
+  id          String    @id @default(uuid())
+  recipientId String
+  type        NewsType
+  payload     Json
+  createdAt   DateTime  @default(now())
+  readAt      DateTime?
+  recipient   Account   @relation(fields: [recipientId], references: [id])
+
+  @@index([recipientId, createdAt])
+}
+
+model DailyQuest {
+  accountId         String
+  /// KST `YYYY-MM-DD`
+  day               String
+  questKey          String
+  target            Int
+  progress          Int       @default(0)
+  reward            Int
+  claimedAt         DateTime?
+  /// friend_play가 이미 센 클릭커. 같은 클릭커를 두 번 세지 않는다.
+  countedClickerIds String[]  @default([])
+  account           Account   @relation(fields: [accountId], references: [id])
+
+  @@id([accountId, day, questKey])
+}
+
+enum SwitchKind {
+  sound
+  effect
+}
+
+enum SwitchGrade {
+  common
+  rare
+  epic
+  legend
+}
+
+/// 스위치 카탈로그. 시드(prisma/seed.ts)가 만들고 갱신한다.
+model Switch {
+  id        String        @id
+  kind      SwitchKind
+  grade     SwitchGrade
+  name      String
+  /// 모바일 엔진이 해석할 프리셋 이름. 예: { "preset": "spin90" }
+  assetJson Json
+  owners    OwnedSwitch[]
+  pulls     GachaPull[]
+}
+
+model OwnedSwitch {
+  accountId  String
+  switchId   String
+  acquiredAt DateTime @default(now())
+  account    Account  @relation(fields: [accountId], references: [id])
+  switch     Switch   @relation(fields: [switchId], references: [id])
+
+  @@id([accountId, switchId])
+}
+
+model GachaPull {
+  id          String   @id @default(uuid())
+  accountId   String
+  switchId    String
+  duplicate   Boolean
+  refund      Int
+  /// 같은 requestId 재요청에 똑같은 응답을 돌려주려고 결과 시점의 값을 남긴다.
+  shardsAfter Int
+  pityAfter   Int
+  requestId   String   @unique
+  createdAt   DateTime @default(now())
+  account     Account  @relation(fields: [accountId], references: [id])
+  switch      Switch   @relation(fields: [switchId], references: [id])
+
+  @@index([accountId, createdAt])
+}
+
+enum ReportReason {
+  face
+  copyright
+  inappropriate
+  other
+}
+
+enum ReportStatus {
+  pending
+  restored
+  removed
+}
+
+/// 신고는 접수 즉시 클릭커를 숨긴다. 같은 사람이 같은 클릭커를 두 번 신고할 수 없다(멱등).
+model Report {
+  id         String       @id @default(uuid())
+  reporterId String
+  clickerId  String
+  reason     ReportReason
+  note       String?
+  status     ReportStatus @default(pending)
+  createdAt  DateTime     @default(now())
+  reporter   Account      @relation(fields: [reporterId], references: [id])
+  clicker    Clicker      @relation(fields: [clickerId], references: [id])
+
+  @@unique([reporterId, clickerId])
+  @@index([clickerId, status])
+}
+
+model Block {
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+  blocker   Account  @relation("Blocker", fields: [blockerId], references: [id])
+  blocked   Account  @relation("Blocked", fields: [blockedId], references: [id])
+
+  @@id([blockerId, blockedId])
+  @@index([blockedId])
+}
+
+enum PurchasePlatform {
+  ios
+  android
+}
+
+/// 스토어 transactionId가 pk라서 같은 결제는 한 번만 반영된다(멱등).
+model Purchase {
+  transactionId String           @id
+  accountId     String
+  platform      PurchasePlatform
+  productId     String
+  createdAt     DateTime         @default(now())
+  account       Account          @relation(fields: [accountId], references: [id])
+
+  @@index([accountId])
+}
